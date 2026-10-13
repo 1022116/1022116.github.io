@@ -1,5 +1,5 @@
 /*
- * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v4 / 版 4.0）
+ * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v5 / 版 5.0）
  * HTML / CSS / Vanilla JavaScript のみ。外部CDN・ライブラリなし。URLはすべて相対（GitHub Pages のサブパスで動作）。
  *
  * ■ 状態保存と再読込の仕様
@@ -25,7 +25,9 @@
     swipeMinPx: 40,
     swipeRatio: 0.18,
     swipeVelocity: 0.45,
-    spinnerDelay: 150
+    spinnerDelay: 150,
+    heroMaxHeight: 'min(78vh, 900px)', // css/style.css の .is-hero と同じ値
+    fontWait: 1500
   });
   var KEYS = Object.freeze({ year: 'pv:selectedYear', scroll: 'pv:scroll' });
   var PATH_RE = /^(photos|thumbs)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.webp$/;
@@ -35,9 +37,10 @@
   function $(id) { return document.getElementById(id); }
 
   var el = {
-    header: document.querySelector('.app-header'),
+    header: document.querySelector('.app-header'), // スクロール中も上に残る年の行
     title: $('app-title'),
     count: $('photo-count'),
+    range: $('photo-range'),
     tabs: $('year-tabs'),
     status: $('status'),
     statusText: $('status-text'),
@@ -47,6 +50,7 @@
     sentinel: $('grid-sentinel'),
     viewer: $('viewer'),
     counter: $('viewer-counter'),
+    no: $('viewer-no'),
     close: $('viewer-close'),
     stage: $('viewer-stage'),
     img: $('viewer-img'),
@@ -103,6 +107,11 @@
   }
   function jstYear(ms) { return jstParts(ms).y; }
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function formatDot(ms) {
+    var p = jstParts(ms);
+    return p.y + '.' + pad2(p.m) + '.' + pad2(p.d);
+  }
+  function formatNo(n) { return n < 10 ? '0' + n : String(n); }
   function formatDateTime(ms) {
     var p = jstParts(ms);
     return p.y + '年' + p.m + '月' + p.d + '日 ' + pad2(p.h) + ':' + pad2(p.mi);
@@ -157,6 +166,8 @@
     });
     // S-02: 新しい順。同日時は JSON の順序（＝生成時の相対パス昇順）を保つ安定ソート
     photos.sort(function (a, b) { return (b.ms - a.ms) || (a.order - b.order); });
+    // 目録番号: いちばん古い写真が 1。年で絞り込んでも番号は変わらない
+    for (var k = 0; k < photos.length; k++) photos[k].no = photos.length - k;
     return { photos: photos, title: title, invalid: invalid };
   }
 
@@ -215,6 +226,7 @@
     el.grid.textContent = '';
     el.tabs.textContent = '';
     el.count.textContent = '';
+    el.range.textContent = '';
     el.sentinel.hidden = true;
     setStatus('error', errorMessage(err));
     document.documentElement.setAttribute('data-pv', 'error');
@@ -225,6 +237,7 @@
     state.invalid = parsed.invalid;
     if (parsed.invalid && window.console) console.warn('[photo-viewer] 表示できないデータ: ' + parsed.invalid + '件');
     el.title.textContent = parsed.title;
+    el.title.classList.toggle('is-ja', /[\u3000-\u9fff\uff00-\uffef]/.test(parsed.title));
     document.title = parsed.title;
 
     var years = [];
@@ -249,8 +262,23 @@
     } else {
       setStatus('ready', '');
     }
-    restoreScroll();
-    document.documentElement.setAttribute('data-pv', state.photos.length ? 'ready' : 'empty');
+    var token = state.loadToken;
+    whenLayoutStable(function () {
+      if (token !== state.loadToken) return;
+      restoreScroll();
+      document.documentElement.setAttribute('data-pv', state.photos.length ? 'ready' : 'empty');
+    });
+  }
+
+  function whenLayoutStable(fn) {
+    var done = false;
+    var run = function () { if (!done) { done = true; fn(); } };
+    if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === 'function') {
+      document.fonts.ready.then(run, run);
+      setTimeout(run, CONFIG.fontWait);
+    } else {
+      run();
+    }
   }
 
   // ---------------------------------------------------------------- 年タブ（S-06）
@@ -274,6 +302,7 @@
       b.setAttribute('aria-controls', 'grid-panel');
       b.setAttribute('data-year', String(v));
       b.setAttribute('aria-label', (v === 'all' ? 'すべて' : v + '年') + '（' + countFor(v) + '枚）');
+      b.setAttribute('data-count', String(countFor(v)));
       b.textContent = tabLabel(v);
       el.tabs.appendChild(b);
     });
@@ -332,16 +361,20 @@
     selectYear(tabs[j].getAttribute('data-year'));
   });
 
-  // ---------------------------------------------------------------- 3列グリッド（S-05）
+  // ---------------------------------------------------------------- ポートフォリオ型一覧（S-05）
   function updateCount() {
-    var label = state.year === 'all' ? 'すべて' : state.year + '年';
-    var text = state.photos.length ? label + ' · ' + state.list.length + '枚' : '';
+    var n = state.list.length + '枚';
+    var text = state.photos.length ? (state.year === 'all' ? n : state.year + '年の' + n) : '';
+    var ys = state.years;
+    el.range.textContent = !ys.length ? '' : (ys.length === 1 ? String(ys[0]) : ys[ys.length - 1] + '–' + ys[0]);
     if (state.invalid) text += '（表示できないデータ ' + state.invalid + '件）';
     el.count.textContent = text;
   }
 
   function makeTile(p, i) {
+    var hero = i === 0;
     var li = document.createElement('li');
+    if (hero) li.className = 'is-hero';
     var b = document.createElement('button');
     b.type = 'button';
     b.className = 'tile';
@@ -350,18 +383,39 @@
     var img = document.createElement('img');
     img.loading = 'lazy'; // src より先に設定（遅延読込を確実に効かせる）
     img.decoding = 'async';
-    img.width = 480;
-    img.height = 480;
+    if (hero) {
+      // 読み込み前から元の縦横比の場所を確保する（読み込み後に一覧がずれてスクロール位置が狂わないように）
+      var rw = p.width || 4, rh = p.height || 3;
+      b.style.aspectRatio = rw + ' / ' + rh;
+      b.style.width = 'min(100%, calc(' + CONFIG.heroMaxHeight + ' * ' + (rw / rh).toFixed(4) + '))';
+      img.width = rw;
+      img.height = rh;
+    } else {
+      img.width = 480;
+      img.height = 480;
+    }
     img.alt = p.alt;
     img.addEventListener('error', function () { b.classList.add('is-broken'); });
-    img.src = p.thumb;
+    img.src = hero ? p.src : p.thumb;
     var fb = document.createElement('span');
     fb.className = 'tile-fallback';
     fb.setAttribute('aria-hidden', 'true');
     fb.textContent = '表示できません';
     b.appendChild(img);
     b.appendChild(fb);
+    var cap = document.createElement('p');
+    cap.className = 'tile-cap';
+    cap.setAttribute('aria-hidden', 'true'); // 読み上げは写真の代替テキスト（撮影日時）で行う
+    var no = document.createElement('span');
+    no.className = 'tile-no';
+    no.textContent = formatNo(p.no);
+    var date = document.createElement('span');
+    date.className = 'tile-date';
+    date.textContent = formatDot(p.ms);
+    cap.appendChild(no);
+    cap.appendChild(date);
     li.appendChild(b);
+    li.appendChild(cap);
     return li;
   }
 
@@ -425,18 +479,16 @@
     if (y <= 0 || !state.rendered) return base;
     base.y = Math.round(y);
     var top = headerBottom();
-    var first = el.grid.children[0];
-    var second = el.grid.children[3];
-    var r0 = first.getBoundingClientRect();
-    var rowH = second ? second.getBoundingClientRect().top - r0.top : r0.height;
-    if (rowH <= 0) return base;
-    var rows = Math.ceil(state.rendered / 3);
-    var row = clamp(Math.floor((top - r0.top) / rowH), 0, rows - 1);
-    var idx = row * 3;
-    var li = el.grid.children[idx];
-    if (!li || !state.list[idx]) return base;
+    var items = el.grid.children;
+    // 一覧は上から順に並ぶので、下端が年の行より下にある最初の写真を二分探索で求める
+    var lo = 0, hi = Math.min(items.length, state.rendered) - 1, idx = -1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (items[mid].getBoundingClientRect().bottom > top + 1) { idx = mid; hi = mid - 1; } else { lo = mid + 1; }
+    }
+    if (idx < 0 || !state.list[idx]) return base;
     base.anchorId = state.list[idx].id;
-    base.delta = Math.round(li.getBoundingClientRect().top - top);
+    base.delta = Math.round(items[idx].getBoundingClientRect().top - top);
     return base;
   }
 
@@ -469,13 +521,18 @@
       if (idx >= 0) {
         ensureRendered(idx + CONFIG.batchSize);
         var li = el.grid.children[idx];
-        var target = (window.pageYOffset || 0) + li.getBoundingClientRect().top - headerBottom() - (s.delta || 0);
-        window.scrollTo(0, Math.max(0, Math.round(target)));
+        // 見出しはスクロールで流れ、年の行だけが上に残るため、
+        // スクロール後の位置で年の行の下端が変わる。ずれがなくなるまで補正する（最大3回）。
+        for (var k = 0; k < 3; k++) {
+          var diff = li.getBoundingClientRect().top - headerBottom() - (s.delta || 0);
+          if (Math.abs(diff) < 1) break;
+          window.scrollTo(0, Math.max(0, Math.round((window.pageYOffset || 0) + diff)));
+        }
       } else if (s.y > 0) {
         // 基準の写真が削除された場合は保存したピクセル位置付近へ
-        var tile = el.grid.children[0];
-        var per = tile ? Math.max(1, tile.getBoundingClientRect().height) : 120;
-        ensureRendered(Math.ceil(s.y / per) * 3 + CONFIG.batchSize);
+        var last = el.grid.children[state.rendered - 1];
+        var perItem = last ? Math.max(1, (last.getBoundingClientRect().bottom + (window.pageYOffset || 0)) / state.rendered) : 60;
+        ensureRendered(Math.ceil(s.y / perItem) + CONFIG.batchSize);
         window.scrollTo(0, s.y);
       }
     } finally {
@@ -589,6 +646,7 @@
     if (el.img.complete && el.img.naturalWidth) slideDone(token, false);
 
     el.counter.textContent = (state.index + 1) + ' / ' + n;
+    el.no.textContent = 'No. ' + formatNo(p.no);
     el.caption.textContent = formatDateTime(p.ms) + (p.dateSource === 'mtime' ? '（ファイル更新日時）' : '');
     var focused = document.activeElement;
     el.prev.disabled = state.index === 0;

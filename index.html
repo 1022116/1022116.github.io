@@ -8,25 +8,26 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
-  <meta name="pv-spec" content="PV-SPEC-2026-10-v4 4.0">
+  <meta name="pv-spec" content="PV-SPEC-2026-10-v5 5.0">
   <title>写真</title>
+  <link rel="preload" href="fonts/albert-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
   <script src="js/app.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#grid-panel">写真一覧へ移動</a>
 
-  <header class="app-header">
-    <div class="header-inner">
-      <div class="title-row">
-        <h1 class="app-title" id="app-title">写真</h1>
-        <p class="app-count" id="photo-count"></p>
-      </div>
-      <nav class="tabs-nav" aria-label="年で絞り込み">
-        <div class="year-tabs" id="year-tabs" role="tablist" aria-label="表示する年"></div>
-      </nav>
-    </div>
+  <header class="site-head">
+    <h1 class="app-title" id="app-title">写真</h1>
+    <p class="site-meta">
+      <span class="site-range" id="photo-range"></span>
+      <span class="app-count" id="photo-count"></span>
+    </p>
   </header>
+
+  <nav class="app-header tabs-bar" aria-label="年で絞り込み">
+    <div class="year-tabs" id="year-tabs" role="tablist" aria-label="表示する年"></div>
+  </nav>
 
   <main class="app-main" id="main">
     <div class="status" id="status" role="status" aria-live="polite" data-state="loading">
@@ -42,23 +43,26 @@
 
   <dialog class="viewer" id="viewer" aria-label="写真の全画面表示" aria-describedby="viewer-caption">
     <div class="viewer-bar">
+      <p class="viewer-no" id="viewer-no" aria-hidden="true"></p>
       <p class="viewer-counter" id="viewer-counter" aria-live="polite"></p>
       <button type="button" class="viewer-btn viewer-close" id="viewer-close" aria-label="閉じる">
-        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M5 5l14 14M19 5L5 19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       </button>
     </div>
     <div class="viewer-stage" id="viewer-stage">
       <img class="viewer-img" id="viewer-img" alt="" draggable="false" decoding="async">
       <span class="spinner viewer-spinner" id="viewer-spinner" aria-hidden="true" hidden></span>
       <p class="viewer-error" id="viewer-error" role="alert" hidden>画像を読み込めませんでした</p>
+    </div>
+    <div class="viewer-foot">
       <button type="button" class="viewer-btn viewer-nav viewer-prev" id="viewer-prev" aria-label="前の写真">
-        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
+      <p class="viewer-caption" id="viewer-caption"></p>
       <button type="button" class="viewer-btn viewer-nav viewer-next" id="viewer-next" aria-label="次の写真">
-        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
     </div>
-    <p class="viewer-caption" id="viewer-caption"></p>
   </dialog>
 
   <noscript><p class="noscript">写真を表示するには JavaScript を有効にしてください。</p></noscript>

@@ -1,8 +1,8 @@
 {
-  "specId": "PV-SPEC-2026-10-v4",
-  "specVersion": "4.0",
+  "specId": "PV-SPEC-2026-10-v5",
+  "specVersion": "5.0",
   "schemaVersion": 3,
-  "title": "写真",
+  "title": "Photographs",
   "timezone": "Asia/Tokyo",
   "count": 16,
   "years": [
