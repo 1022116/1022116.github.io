@@ -1,6 +1,6 @@
 # 写真ビューア（photo-viewer）
 
-同期仕様ID / 版: **PV-SPEC-2026-10-v4 / version 4.0**
+同期仕様ID / 版: **PV-SPEC-2026-10-v5 / version 5.0**
 
 PC に取り込んだ Amazon Photos 由来の写真から、スマートフォンで閲覧できる静的な写真ビューアを生成し、GitHub Pages で公開します。
 操作の流れは別冊「ユーザー向けセットアップ・運用手順書」（同じ同期仕様ID・版）に従ってください。本 README は手順書と同じコマンドを使い、各コマンドの動作と仕様を補足します。
@@ -29,7 +29,7 @@ PC に取り込んだ Amazon Photos 由来の写真から、スマートフォ�
 | S-02 | 新しい撮影日時順・同日時は相対パス昇順 | 生成時に並べ替え、画面側は JSON の順序を保つ安定ソート |
 | S-03 | 480×480 WebP サムネイル | EXIF の回転を補正してから中央を正方形に切り抜き |
 | S-04 | 詳細画像は長辺最大1920px | 元の縦横比を維持。1920px 以下の写真は拡大しない |
-| S-05 | Instagram 風 3列一覧 | スマホ幅で3列・隙間2px（広い画面でも3列、最大幅 935px） |
+| S-05 | ポートフォリオ型一覧（v5 で変更） | 先頭の1枚（その一覧でいちばん新しい写真）を元の縦横比で大きく。以降は正方形をスマホ縦向きで2列、幅 640px 以上で3列。写真の間に余白をとり、各写真に目録番号（古い順の通し番号）と撮影日を表示 |
 | S-06 | 年タブ自動生成 | 「すべて」＋写真のある年を新しい順に |
 | S-07 | 全画面スライド | 左右スワイプ・前後ボタン・閉じる・Escape・矢印キー |
 | S-08 | 公開画像の EXIF 削除 | GPS を含む EXIF・XMP・ICC を書き込まない（色は sRGB に変換） |
@@ -41,7 +41,7 @@ PC に取り込んだ Amazon Photos 由来の写真から、スマートフォ�
 ```
 photo-viewer/
   index.html            画面の骨格（読込中表示・全画面表示）
-  css/style.css         3列一覧・年タブ・全画面・レスポンシブ・reduced-motion
+  css/style.css         表紙・ポートフォリオ型一覧・年タブ・全画面・レスポンシブ・reduced-motion
   js/app.js             データ取得・安定ソート・タブ・スライド・スワイプ・状態保存
   data/photos.json      一覧データ（生成物）
   photos/<年>/*.webp    詳細画像（生成物）
@@ -52,6 +52,7 @@ photo-viewer/
   tools/publish.ps1        生成→検証→試験→安全確認→commit/push
   tools/pv_common.py       共通定義（仕様ID・サイズ・日時・設定・ロック）
   tests/                   試験（test_build.py / test_publish.py / test_ui.py）
+  fonts/                欧文フォント Albert Sans（SIL Open Font License 1.1。OFL.txt を同梱）
   config.example.json   設定の見本（config.json にコピーして使う）
   requirements.txt      必要な Python パッケージ
   pytest.ini            「python -m pytest -q」で tests/ を実行する設定
@@ -93,7 +94,7 @@ Copy-Item config.example.json config.json
 | `thumbSize` | `480` | **固定値（S-03）。変更しないでください**（480 以外にすると生成・検証がエラーで停止） |
 | `detailMaxEdge` | `1920` | **固定値（S-04）。変更しないでください**（1920 以外にすると生成・検証がエラーで停止） |
 | `allowedExtensions` | `.jpg .jpeg .png .webp .heic .heif` | 対象にする拡張子。それ以外（動画など）はスキップしてログに記録 |
-| `siteTitle` | `写真` | 画面上部に表示する名前 |
+| `siteTitle` | `Photographs` | 表紙に大きく表示する名前（未設定時は「写真」）。欧文は Albert Sans、和文はシステムの日本語書体で表示 |
 | `thumbQuality` / `detailQuality` | 80 / 85 | WebP の画質（1～100） |
 | `shrinkGuardRatio` | 0.5 | 公開中の写真数（10枚以上）に対して、この割合未満へ減る場合は停止 |
 | `jobs` | 0 | 並列変換数（0 = 自動、最大4） |
@@ -187,7 +188,7 @@ PowerShell -ExecutionPolicy Bypass -File .\tools\publish.ps1
 | `-AllowShrink` | 写真数の大幅減少を許可 |
 
 - push に失敗した場合（通信断・認証切れなど）、commit は PC 内に残り、**次回の publish.ps1 実行時に自動で再送**します。
-- publish.ps1 が commit するのは `index.html css js data photos thumbs .nojekyll` だけです。tools・tests・README などを変更した場合は通常どおり自分で commit してください。
+- publish.ps1 が commit するのは `index.html css js fonts data photos thumbs .nojekyll` だけです。tools・tests・README などを変更した場合は通常どおり自分で commit してください。
 
 ## 自動更新（タスク スケジューラー）
 
@@ -208,8 +209,11 @@ PowerShell -ExecutionPolicy Bypass -File .\tools\publish.ps1
 ## 画面の動作
 
 - 年タブ: 「すべて」と写真のある年（新しい順）。矢印キー・Home・End でも切り替え可能。
-- 一覧: 3列・隙間2px（縦・横どちらの向きでも3列）。60枚ずつ追加表示し、サムネイルは画面に近づいてから読み込みます。
-- 全画面: 写真をタップ。左右スワイプ／「‹ ›」ボタン／矢印キーで前後、×ボタン／Escape で閉じます。端では止まります（ループしません）。
+- 表紙: サイト名を画面幅いっぱいの大きな文字で表示し、その下に撮影年の範囲と枚数を表示します。
+- 一覧: 先頭の1枚を元の縦横比で大きく、以降は正方形（スマホ縦向き2列、横向き・PC は3列）。写真ごとに目録番号と撮影日を添えます。
+  目録番号はいちばん古い写真が 01 の通し番号で、年で絞り込んでも変わりません（過去の日付の写真を追加すると、それより新しい写真の番号は1つずつ増えます）。
+- 60枚ずつ追加表示し、写真は画面に近づいてから読み込みます。
+- 全画面: 写真をタップ。白い背景（ダークモードでは黒）に写真を表示し、左上に目録番号を出します。左右スワイプ／写真の下の「‹ ›」／矢印キーで前後、×／Escape で閉じます。端では止まります（ループしません）。
 - 読込中・写真0件・JSON の読込失敗（再読み込みボタン付き）・旧形式データ・画像の読込失敗をそれぞれ表示します。
 - 想定ブラウザー: iOS 15.4 以降の Safari、最新の Android Chrome、PC の最新ブラウザー（実機での確認は手順書 8章）。
 
@@ -246,14 +250,18 @@ PowerShell -ExecutionPolicy Bypass -File .\tools\publish.ps1
 
 | 同期仕様ID / 版 | 日付 | 変更 |
 |---|---|---|
-| PV-SPEC-2026-10-v4 / 4.0 | 2026-10-13 | 撮影日時の決め方を「EXIF DateTimeOriginal → 更新日時」から「EXIF DateTimeOriginal → ファイル名の日時 → 更新日時」に変更。`dateSource` に `filename` を追加。理由: Amazon Photos から取得した写真の一部に EXIF がなく、更新日時（コピーした時刻）で並んでしまうため。S-01～S-10 の文言は変更なし |
+| PV-SPEC-2026-10-v5 / 5.0 | 2026-10-13 | S-05 を「Instagram 風3列一覧（スマホ幅で3列、隙間2px）」から「ポートフォリオ型一覧」に変更（受入条件は上の表）。表紙（大きなサイト名・撮影年の範囲・枚数）と目録番号を追加。欧文フォント Albert Sans を同梱 |
+| PV-SPEC-2026-10-v4 / 4.0 | 2026-10-13 | 撮影日時の決め方を「EXIF DateTimeOriginal → 更新日時」から「EXIF DateTimeOriginal → ファイル名の日時 → 更新日時」に変更。`dateSource` に `filename` を追加 |
 | PV-SPEC-2026-10-v3 / 3.0 | 2026-10-02 | 初版（実装指示書・ユーザー向け手順書） |
 
-v4 に合わせて、2つの文書を次のように更新してください（手順書のルール「仕様変更時は両文書の同期仕様IDと版番号を同時に更新」）。
+v5 に合わせて、2つの文書を次のように更新してください（手順書のルール「仕様変更時は両文書の同期仕様IDと版番号を同時に更新」）。
 
-- 両文書: 同期仕様ID `PV-SPEC-2026-10-v3` → `PV-SPEC-2026-10-v4`、版 `3.0` → `4.0`（表紙・各ページのヘッダー・同期チェック）
-- ユーザー向け手順書 3.2: `PV-SPEC-2026-10-v3 / version 3.0` → `PV-SPEC-2026-10-v4 / version 4.0`
-- 実装指示書「絶対仕様」: 「EXIF DateTimeOriginalを優先し、なければ更新日時。」→「EXIF DateTimeOriginalを優先し、なければファイル名の日時、それもなければ更新日時。」
+- 両文書: 同期仕様ID `PV-SPEC-2026-10-v3` → `PV-SPEC-2026-10-v5`、版 `3.0` → `5.0`（表紙・各ページのヘッダー・同期チェック）
+- 両文書の共通仕様台帳 S-05: 「Instagram風3列一覧／スマホ幅で3列、隙間2px」→「ポートフォリオ型一覧／先頭1枚を元の比率で大きく、以降は正方形をスマホ2列（幅640px以上で3列）、各写真に番号と撮影日」
+- 両文書の表紙の共通確定仕様: 「Instagram風3列一覧」→「ポートフォリオ型一覧」
+- ユーザー向け手順書 3.2: `PV-SPEC-2026-10-v3 / version 3.0` → `PV-SPEC-2026-10-v5 / version 5.0`
+- ユーザー向け手順書 6章: 「3列の正方形サムネイルになる」→「先頭の1枚が大きく、以降は正方形が2列（PCは3列）で番号と日付が付く」
+- 実装指示書「絶対仕様」: 「EXIF DateTimeOriginalを優先し、なければ更新日時。」→「EXIF DateTimeOriginalを優先し、なければファイル名の日時、それもなければ更新日時。」／「一覧はスマホ3列・隙間2px」→「一覧はポートフォリオ型（S-05）」
 - 実装指示書「photos.json」: dateSource の値として exif / filename / mtime（旧データ移行時は legacy）を明記
 
 ## 終了コード

@@ -1,4 +1,4 @@
-"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v4 / 版 4.0）
+"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v5 / 版 5.0）
 
 Playwright（Chromium）でスマートフォン画面をエミュレートし、試験画像から生成したサイトを
 GitHub Pages と同じ「リポジトリ名のサブパス」で配信して確認する。
@@ -180,11 +180,11 @@ def scroll_y(page):
 
 
 def anchor_id(page):
-    """ヘッダー直下に見えている写真のID。"""
+    """年の行の下に見えている最初の写真のID（アプリのスクロール保存と同じ規則）。"""
     return page.evaluate(
-        """() => { const y = document.querySelector('.app-header').getBoundingClientRect().bottom + 3;
-                   const el = document.elementFromPoint(20, y); const t = el && el.closest('.tile');
-                   return t ? t.dataset.id : null; }"""
+        """() => { const top = document.querySelector('.app-header').getBoundingClientRect().bottom;
+                   const li = [...document.querySelectorAll('#grid > li')].find(e => e.getBoundingClientRect().bottom > top + 1);
+                   return li ? li.querySelector('.tile').dataset.id : null; }"""
     )
 
 
@@ -219,44 +219,132 @@ class Touch:
 # 回帰: 一覧・年タブ
 # ===========================================================================
 @pytest.mark.parametrize("device", ["iPhone 13", "iPhone SE", "Pixel 5"])
-def test_grid_is_three_columns_with_2px_gap_on_phones(pw, site, device):
+def test_portfolio_grid_on_phones(pw, site, device):
+    """S-05（v5）: 先頭の1枚を元の縦横比で大きく、以降は正方形の2列。各写真に番号と撮影日。"""
     p, browser = pw
     ctx = browser.new_context(**p.devices[device])
     try:
         page, w = open_page(ctx, site["main"])
         vw = page.evaluate("document.documentElement.clientWidth")
-        boxes = page.eval_on_selector_all(
-            ".tile", "els => els.slice(0, 6).map(e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })"
+        grid = page.locator("#grid").bounding_box()
+        assert 12 <= grid["x"] <= 24 and abs((grid["x"] + grid["width"]) - (vw - grid["x"])) < 1  # 左右に同じ余白
+        page.wait_for_function("document.querySelector('#grid > li img').naturalWidth > 0")
+        hero = page.evaluate(
+            """(() => { const li = document.querySelector('#grid > li'); const img = li.querySelector('img');
+               const r = img.getBoundingClientRect(); return { hero: li.classList.contains('is-hero'),
+               usesDetail: img.getAttribute('src').startsWith('photos/'), ratio: r.width / r.height,
+               natural: img.naturalWidth / img.naturalHeight, liW: li.getBoundingClientRect().width }; })()"""
         )
-        (x0, y0, w0, h0), (x1, y1, w1, _), (x2, y2, w2, _), (x3, y3, _, _) = boxes[:4]
-        assert abs(x0) < 0.6 and abs(x2 + w2 - vw) < 0.6  # 画面幅いっぱい
-        assert y0 == y1 == y2 and x3 == x0  # 3枚で折り返す
-        assert abs((x1 - (x0 + w0)) - 2) < 0.6 and abs((x2 - (x1 + w1)) - 2) < 0.6  # 横の隙間 2px
-        assert abs((y3 - (y0 + h0)) - 2) < 0.6  # 縦の隙間 2px
-        assert abs(w0 - h0) < 0.6 and abs(w0 - (vw - 4) / 3) < 0.6  # 正方形
+        assert hero["hero"] and hero["usesDetail"]
+        assert abs(hero["liW"] - grid["width"]) < 1  # 横幅いっぱいの行を使う
+        assert abs(hero["ratio"] - hero["natural"]) < 0.02  # 元の縦横比
+        boxes = page.eval_on_selector_all(
+            "#grid > li:not(.is-hero) .tile", "els => els.slice(0, 3).map(e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })"
+        )
+        (x1, y1, w1, h1), (x2, y2, w2, _), (x3, y3, _, _) = boxes
+        assert y1 == y2 and y3 > y1 and x3 == x1  # 2列で折り返す
+        assert abs(w1 - h1) < 0.6 and abs(w1 - w2) < 0.6  # 正方形・同じ大きさ
+        assert 8 <= x2 - (x1 + w1) <= 24  # 写真の間に余白
+        caps = page.eval_on_selector_all("#grid > li .tile-cap", "els => els.slice(0, 3).map(e => [e.querySelector('.tile-no').textContent, e.querySelector('.tile-date').textContent])")
+        n = len(site["ids"])
+        assert [c[0] for c in caps] == [str(n), str(n - 1), str(n - 2)]  # 目録番号（新しいほど大きい）
+        assert all(re.fullmatch(r"\d{4}\.\d{2}\.\d{2}", c[1]) for c in caps)
+        assert caps[0][1] == site["doc"]["photos"][0]["date"][:10].replace("-", ".")
         w.assert_clean()
     finally:
         ctx.close()
 
 
-def test_desktop_keeps_three_columns_with_max_width(desktop, site):
+def test_desktop_uses_three_columns_with_wide_gaps(desktop, site):
     page, w = open_page(desktop, site["main"])
-    grid = page.locator("#grid").bounding_box()
-    assert abs(grid["width"] - 935) < 1
-    tops = page.eval_on_selector_all(".tile", "els => els.slice(0, 4).map(e => e.getBoundingClientRect().top)")
+    tops = page.eval_on_selector_all("#grid > li:not(.is-hero) .tile", "els => els.slice(0, 4).map(e => e.getBoundingClientRect().top)")
     assert tops[0] == tops[1] == tops[2] < tops[3]
+    gap = page.evaluate("(() => { const t = document.querySelectorAll('#grid > li:not(.is-hero) .tile'); return t[1].getBoundingClientRect().left - t[0].getBoundingClientRect().right; })()")
+    assert gap >= 16
     w.assert_clean()
+
+
+def test_hero_space_is_reserved_before_image_loads(phone, site):
+    """先頭の大きな写真は読み込み前から場所を確保し、読み込み後に一覧がずれない。"""
+    page = phone.new_page()
+    w = Watch(page)
+    held = []
+    first_src = site["doc"]["photos"][0]["src"]
+    page.route(f"**/{first_src}", lambda route: held.append(route))
+    page.goto(site["main"])
+    page.wait_for_selector("html[data-pv=ready]")
+    before = page.evaluate("document.querySelector('#grid > li:nth-child(2)').getBoundingClientRect().top")
+    hero_h = page.evaluate("document.querySelector('#grid > li.is-hero .tile').getBoundingClientRect().height")
+    assert hero_h > 100
+    for _ in range(50):
+        if held:
+            break
+        page.wait_for_timeout(50)
+    held[0].continue_()
+    page.wait_for_function("document.querySelector('#grid > li.is-hero img').naturalWidth > 0")
+    after = page.evaluate("document.querySelector('#grid > li:nth-child(2)').getBoundingClientRect().top")
+    assert abs(after - before) < 1
+    w.assert_clean()
+
+
+def test_cover_title_meta_and_catalogue_numbers(phone, site):
+    page, w = open_page(phone, site["main"])
+    assert page.inner_text("#app-title") == "写真"
+    assert page.evaluate("document.getElementById('app-title').classList.contains('is-ja')")
+    years = site["doc"]["years"]
+    assert page.inner_text("#photo-range") == f"{years[-1]}–{years[0]}"
+    assert page.get_attribute("#tab-2025", "data-count") == "40"
+    # 年で絞り込んでも目録番号は変わらない（通し番号）
+    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    page.wait_for_function("document.querySelectorAll('#grid > li').length === 79")
+    all_nos = dict(zip(tile_ids(page), page.eval_on_selector_all("#grid > li .tile-no", "els => els.map(e => e.textContent)")))
+    page.click("#tab-2024")
+    ids24 = tile_ids(page)
+    nos24 = page.eval_on_selector_all("#grid > li .tile-no", "els => els.map(e => e.textContent)")
+    assert [all_nos[i] for i in ids24] == nos24
+    assert page.locator("#grid > li.is-hero").count() == 1  # 絞り込み後も先頭は大きく
+    page.click(".tile[data-index='0']")
+    assert page.inner_text("#viewer-no") == "No. " + nos24[0]
+    w.assert_clean()
+
+
+def test_latin_title_uses_bundled_font(pw, site):
+    p, browser = pw
+    ctx = browser.new_context(**p.devices["iPhone 13"])
+    try:
+        page = ctx.new_page()
+        w = Watch(page)
+
+        def handler(route):
+            resp = route.fetch()
+            doc = resp.json()
+            doc["title"] = "Photographs"
+            route.fulfill(response=resp, json=doc)
+
+        page.route("**/data/photos.json", handler)
+        page.goto(site["main"])
+        page.wait_for_selector("html[data-pv=ready]")
+        assert page.inner_text("#app-title") == "Photographs"
+        assert not page.evaluate("document.getElementById('app-title').classList.contains('is-ja')")
+        assert page.evaluate("document.fonts.check('200 64px \"Albert Sans\"')")
+        assert any(u == site["main"] + "fonts/albert-sans-latin-wght-normal.woff2" for u in w.requests)
+        assert page.title() == "Photographs"
+        lines = page.evaluate("Math.round(document.getElementById('app-title').getBoundingClientRect().height / parseFloat(getComputedStyle(document.getElementById('app-title')).lineHeight))")
+        assert lines == 1  # 画面幅いっぱいでも1行に収まる
+        w.assert_clean()
+    finally:
+        ctx.close()
 
 
 def test_year_tabs_are_generated_newest_first(phone, site):
     page, w = open_page(phone, site["main"])
     assert tab_texts(page) == ["すべて", "2026", "2025", "2024", "2023"]
     assert selected_tab(page) == "すべて"
-    assert page.inner_text("#photo-count") == "すべて · 79枚"
+    assert page.inner_text("#photo-count") == "79枚"
     page.click("#tab-2025")
     expected = [p["id"] for p in site["doc"]["photos"] if p["year"] == 2025]
     assert tile_ids(page) == expected and len(expected) == 40
-    assert page.inner_text("#photo-count") == "2025年 · 40枚"
+    assert page.inner_text("#photo-count") == "2025年の40枚"
     w.assert_clean()
 
 
@@ -778,9 +866,9 @@ def test_landscape_and_rotation(pw, site):
     try:
         page, w = open_page(ctx, site["main"])
         vw = page.evaluate("document.documentElement.clientWidth")
-        boxes = page.eval_on_selector_all(".tile", "els => els.slice(0, 4).map(e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width]; })")
-        assert boxes[0][1] == boxes[1][1] == boxes[2][1] < boxes[3][1]  # 横向きでも3列
-        assert abs((boxes[1][0] - (boxes[0][0] + boxes[0][2])) - 2) < 0.6
+        boxes = page.eval_on_selector_all("#grid > li:not(.is-hero) .tile", "els => els.slice(0, 4).map(e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width]; })")
+        assert boxes[0][1] == boxes[1][1] == boxes[2][1] < boxes[3][1]  # 横向き（広い画面）では3列
+        assert boxes[1][0] - (boxes[0][0] + boxes[0][2]) >= 8
         assert boxes[0][0] >= 0 and boxes[2][0] + boxes[2][2] <= vw + 0.6
 
         def image_fits():
@@ -800,8 +888,13 @@ def test_landscape_and_rotation(pw, site):
         page.wait_for_timeout(300)
         assert image_fits()
         page.click("#viewer-close")
-        tops = page.eval_on_selector_all(".tile", "els => els.slice(0, 4).map(e => e.getBoundingClientRect().top)")
-        assert tops[0] == tops[1] == tops[2] < tops[3]
+        sel = "#grid > li:not(.is-hero) .tile"
+        tops = page.eval_on_selector_all(sel, "els => els.slice(0, 4).map(e => e.getBoundingClientRect().top)")
+        assert tops[0] == tops[1] == tops[2] < tops[3]  # 横向きでは3列
+        page.set_viewport_size({"width": 390, "height": 664})
+        page.wait_for_timeout(200)
+        tops = page.eval_on_selector_all(sel, "els => els.slice(0, 4).map(e => e.getBoundingClientRect().top)")
+        assert tops[0] == tops[1] < tops[2]  # 縦向きでは2列
         w.assert_clean()
     finally:
         ctx.close()
@@ -866,3 +959,39 @@ def test_slow_mobile_network_shows_loading_then_photos(pw, site):
         w.assert_clean()
     finally:
         ctx.close()
+
+
+# ===========================================================================
+# 見出しは流れ、年の行だけが残る／全画面表示の操作は写真に重ならない
+# ===========================================================================
+def test_only_year_row_stays_on_scroll(phone, site):
+    page, w = open_page(phone, site["main"])
+    head0 = page.locator(".site-head").bounding_box()
+    assert head0["y"] >= 0 and page.is_visible("#app-title")
+    page.evaluate("window.scrollTo(0, 900)")
+    page.wait_for_timeout(200)
+    bar = page.evaluate("document.querySelector('.tabs-bar').getBoundingClientRect().top")
+    head = page.evaluate("document.querySelector('.site-head').getBoundingClientRect().bottom")
+    assert abs(bar) < 1  # 年の行は上端に残る
+    assert head <= 0  # 見出しは流れて画面外へ
+    assert page.evaluate("getComputedStyle(document.querySelector('.tabs-bar')).borderBottomWidth") == "0px"
+    # 年の行の高さは 60px 以下（写真の表示領域を広く保つ）
+    assert page.evaluate("document.querySelector('.tabs-bar').getBoundingClientRect().height") <= 60
+    w.assert_clean()
+
+
+def test_viewer_controls_do_not_cover_photo(phone, site):
+    page, w = open_page(phone, site["main"])
+    page.click(".tile[data-index='1']")
+    page.wait_for_function("document.getElementById('viewer-img').naturalWidth > 0")
+    r = page.evaluate(
+        """(() => { const box = id => document.getElementById(id).getBoundingClientRect();
+           const img = box('viewer-img'), p = box('viewer-prev'), n = box('viewer-next'), c = box('viewer-close');
+           const overlap = (a, b) => !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top);
+           return { prev: overlap(img, p), next: overlap(img, n), close: overlap(img, c),
+                    navBelow: p.top >= img.bottom - 1 && n.top >= img.bottom - 1,
+                    bg: getComputedStyle(document.getElementById('viewer')).backgroundColor }; })()"""
+    )
+    assert r["prev"] is False and r["next"] is False and r["close"] is False and r["navBelow"]
+    assert r["bg"] == "rgb(255, 255, 255)"  # 明るい壁（ライトモード）
+    w.assert_clean()

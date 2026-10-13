@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""公開出力一式の動的整合性検証（同期仕様ID PV-SPEC-2026-10-v4 / 版 4.0）
+"""公開出力一式の動的整合性検証（同期仕様ID PV-SPEC-2026-10-v5 / 版 5.0）
 
 検証内容:
   JSON構文（UTF-8・BOMなし）/ 同期仕様ID / 必須キーと型 / 旧fiscalYearの混入 /
@@ -36,6 +36,7 @@ from PIL import Image  # noqa: E402
 Image.MAX_IMAGE_PIXELS = 250_000_000
 
 SITE_FILES = ("index.html", "css/style.css", "js/app.js", ".nojekyll")
+CSS_URL_RE = re.compile(r"""url\(\s*["']?([^"')]+)["']?\s*\)""")
 FORBIDDEN_WEBP_CHUNKS = {b"EXIF": "EXIF", b"XMP ": "XMP", b"ICCP": "ICCプロファイル"}
 EXTERNAL_URL_RE = re.compile(r"""https?://|(?:src|href)\s*=\s*["']//|url\(\s*["']?//""", re.I)
 ROOT_RELATIVE_RE = re.compile(r"""(?:src|href)\s*=\s*["']/(?!/)""", re.I)
@@ -189,6 +190,14 @@ def validate(
                 res.error(f"外部URLへの依存があります（外部CDN禁止）: {rel}")
             if ROOT_RELATIVE_RE.search(text):
                 res.error(f"ルート相対パス(/...)があります（リポジトリのサブパスで壊れます）: {rel}")
+            if rel.endswith(".css"):
+                for ref in CSS_URL_RE.findall(text):
+                    if ref.startswith(("data:", "#")) or "://" in ref:
+                        continue
+                    if ref.startswith("/"):
+                        res.error(f"CSS にルート相対パスがあります: {rel} → {ref}")
+                    elif not (p.parent / ref).resolve().is_file():
+                        res.error(f"CSS が参照するファイルがありません: {rel} → {ref}")
 
     # --- JSON構文 ---------------------------------------------------------------
     if not json_path.is_file():

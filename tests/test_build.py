@@ -1,4 +1,4 @@
-"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v4 / 版 4.0）
+"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v5 / 版 5.0）
 
 試験画像を一時ディレクトリに生成し、build → JSON → 検証 → 再生成までの状態遷移とファイル更新を確認する。
 分類: 正常 / 境界 / 異常 / 競合 / 移行 / 回帰
@@ -185,7 +185,7 @@ class TestNormal:
         raw = (project / "data" / "photos.json").read_bytes()
         assert not raw.startswith(b"\xef\xbb\xbf") and b"\r\n" not in raw
         doc = json.loads(raw.decode("utf-8"))
-        assert doc["specId"] == "PV-SPEC-2026-10-v4" and doc["specVersion"] == "4.0"
+        assert doc["specId"] == "PV-SPEC-2026-10-v5" and doc["specVersion"] == "5.0"
         assert doc["count"] == 1 and doc["years"] == [2025] and doc["timezone"] == "Asia/Tokyo"
         e = doc["photos"][0]
         assert set(e) == set(C.REQUIRED_KEYS)
@@ -813,9 +813,9 @@ class TestRegression:
                  "tools/validate_build.py", "tools/publish.ps1", "tools/pv_common.py", "tests/test_build.py"]
         for rel in files:
             text = (PROJECT_ROOT / rel).read_text(encoding="utf-8-sig")
-            assert "PV-SPEC-2026-10-v4" in text, rel
-            assert "4.0" in text, rel
-        assert C.SPEC_ID == "PV-SPEC-2026-10-v4" and C.SPEC_VERSION == "4.0"
+            assert "PV-SPEC-2026-10-v5" in text, rel
+            assert "5.0" in text, rel
+        assert C.SPEC_ID == "PV-SPEC-2026-10-v5" and C.SPEC_VERSION == "5.0"
         assert json.loads((PROJECT_ROOT / "data" / "photos.json").read_text(encoding="utf-8"))["specId"] == C.SPEC_ID
 
     def test_publish_script_is_utf8_with_bom(self):
@@ -904,7 +904,7 @@ class TestGuideSync:
     def test_readme_uses_the_guide_commands(self):
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
         for cmd in (
-            "PV-SPEC-2026-10-v4 / version 4.0",
+            "PV-SPEC-2026-10-v5 / version 5.0",
             "Python 3.11",
             "python -m venv .venv",
             r".\.venv\Scripts\Activate.ps1",
@@ -1030,5 +1030,26 @@ class TestFilenameDate:
         assert any("同期仕様ID" in e for e in V.validate(project).errors)
         build_ok(project)
         doc = load_photos(project)
-        assert doc["specId"] == "PV-SPEC-2026-10-v4" and doc["photos"][0]["dateSource"] == "filename"
+        assert doc["specId"] == "PV-SPEC-2026-10-v5" and doc["photos"][0]["dateSource"] == "filename"
         assert run_validate(project).returncode == 0
+
+
+# ===========================================================================
+# 仕様 v5: ポートフォリオ型一覧で使う同梱フォント
+# ===========================================================================
+class TestBundledFont:
+    def test_font_and_license_are_bundled(self):
+        font = PROJECT_ROOT / "fonts" / "albert-sans-latin-wght-normal.woff2"
+        assert font.is_file() and font.read_bytes()[:4] == b"wOF2"
+        assert "SIL Open Font License" in (PROJECT_ROOT / "fonts" / "OFL.txt").read_text(encoding="utf-8")
+
+    def test_validator_detects_missing_css_asset(self, project):
+        build_ok(project)
+        assert V.validate(project).ok
+        (project / "fonts" / "albert-sans-latin-wght-normal.woff2").unlink()
+        errors = V.validate(project).errors
+        assert any("CSS が参照するファイルがありません" in e for e in errors), errors
+
+    def test_publish_script_includes_fonts(self):
+        text = (PROJECT_ROOT / "tools" / "publish.ps1").read_text(encoding="utf-8-sig")
+        assert "'fonts'" in text
