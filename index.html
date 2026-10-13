@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="pv-spec" content="PV-SPEC-2026-10-v4 4.0">
+  <title>写真</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#grid-panel">写真一覧へ移動</a>
+
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="title-row">
+        <h1 class="app-title" id="app-title">写真</h1>
+        <p class="app-count" id="photo-count"></p>
+      </div>
+      <nav class="tabs-nav" aria-label="年で絞り込み">
+        <div class="year-tabs" id="year-tabs" role="tablist" aria-label="表示する年"></div>
+      </nav>
+    </div>
+  </header>
+
+  <main class="app-main" id="main">
+    <div class="status" id="status" role="status" aria-live="polite" data-state="loading">
+      <span class="spinner" aria-hidden="true"></span>
+      <p class="status-text" id="status-text">読み込み中…</p>
+      <button type="button" class="status-retry" id="status-retry" hidden>再読み込み</button>
+    </div>
+    <section class="grid-panel" id="grid-panel" role="tabpanel" aria-label="写真一覧" tabindex="-1">
+      <ul class="grid" id="grid" aria-busy="true"></ul>
+      <div class="grid-sentinel" id="grid-sentinel" aria-hidden="true"></div>
+    </section>
+  </main>
+
+  <dialog class="viewer" id="viewer" aria-label="写真の全画面表示" aria-describedby="viewer-caption">
+    <div class="viewer-bar">
+      <p class="viewer-counter" id="viewer-counter" aria-live="polite"></p>
+      <button type="button" class="viewer-btn viewer-close" id="viewer-close" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M5 5l14 14M19 5L5 19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="viewer-stage" id="viewer-stage">
+      <img class="viewer-img" id="viewer-img" alt="" draggable="false" decoding="async">
+      <span class="spinner viewer-spinner" id="viewer-spinner" aria-hidden="true" hidden></span>
+      <p class="viewer-error" id="viewer-error" role="alert" hidden>画像を読み込めませんでした</p>
+      <button type="button" class="viewer-btn viewer-nav viewer-prev" id="viewer-prev" aria-label="前の写真">
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button type="button" class="viewer-btn viewer-nav viewer-next" id="viewer-next" aria-label="次の写真">
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <p class="viewer-caption" id="viewer-caption"></p>
+  </dialog>
+
+  <noscript><p class="noscript">写真を表示するには JavaScript を有効にしてください。</p></noscript>
+</body>
+</html>

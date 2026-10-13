@@ -1,0 +1,12 @@
+{
+  "_comment": "Copy-Item config.example.json config.json でコピーして使います。config.json は Git の対象外です（PC内のパスを公開しないため）。thumbSize と detailMaxEdge は仕様固定値（480 / 1920）で、変更すると生成・検証がエラーになります。",
+  "sourceDir": "source_photos",
+  "allowedExtensions": [".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"],
+  "siteTitle": "写真",
+  "thumbSize": 480,
+  "detailMaxEdge": 1920,
+  "thumbQuality": 80,
+  "detailQuality": 85,
+  "shrinkGuardRatio": 0.5,
+  "jobs": 0
+}

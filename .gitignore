@@ -1,0 +1,23 @@
+# 原本写真は Git の対象外（S-09）。フォルダーを残すための .gitkeep だけ管理する
+source_photos/*
+!source_photos/.gitkeep
+
+# 個人設定（原本フォルダーの場所など PC 内のパスを含むため）
+config.json
+
+# 生成作業用・ログ・排他ロック
+.build/
+logs/
+.locks/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# OS が作るファイル
+.DS_Store
+Thumbs.db
+desktop.ini

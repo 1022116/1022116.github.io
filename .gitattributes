@@ -1,0 +1,9 @@
+# 改行コードを統一（Windows の Git で「LF will be replaced by CRLF」の警告や不要な差分が出ないようにする）
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.webp binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.heic binary
+*.heif binary

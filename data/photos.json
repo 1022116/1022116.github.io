@@ -1,0 +1,189 @@
+{
+  "specId": "PV-SPEC-2026-10-v4",
+  "specVersion": "4.0",
+  "schemaVersion": 3,
+  "title": "写真",
+  "timezone": "Asia/Tokyo",
+  "count": 16,
+  "years": [
+    2026
+  ],
+  "photos": [
+    {
+      "id": "2fabc6bbe8e3f058",
+      "src": "photos/2026/2fabc6bbe8e3f058.webp",
+      "thumb": "thumbs/2026/2fabc6bbe8e3f058.webp",
+      "date": "2026-10-11T10:43:31+09:00",
+      "year": 2026,
+      "width": 1919,
+      "height": 1920,
+      "alt": "2026年10月11日 10:43 撮影の写真",
+      "dateSource": "filename"
+    },
+    {
+      "id": "5bad8fc54c44b6d7",
+      "src": "photos/2026/5bad8fc54c44b6d7.webp",
+      "thumb": "thumbs/2026/5bad8fc54c44b6d7.webp",
+      "date": "2026-09-22T14:43:59+09:00",
+      "year": 2026,
+      "width": 1919,
+      "height": 1920,
+      "alt": "2026年9月22日 14:43 撮影の写真",
+      "dateSource": "filename"
+    },
+    {
+      "id": "7e23e3c96b34907b",
+      "src": "photos/2026/7e23e3c96b34907b.webp",
+      "thumb": "thumbs/2026/7e23e3c96b34907b.webp",
+      "date": "2026-09-21T09:14:52+09:00",
+      "year": 2026,
+      "width": 1919,
+      "height": 1920,
+      "alt": "2026年9月21日 09:14 撮影の写真",
+      "dateSource": "filename"
+    },
+    {
+      "id": "07f726b6459de270",
+      "src": "photos/2026/07f726b6459de270.webp",
+      "thumb": "thumbs/2026/07f726b6459de270.webp",
+      "date": "2026-09-05T18:21:35+09:00",
+      "year": 2026,
+      "width": 1919,
+      "height": 1920,
+      "alt": "2026年9月5日 18:21 撮影の写真",
+      "dateSource": "filename"
+    },
+    {
+      "id": "1b05477aae940d4f",
+      "src": "photos/2026/1b05477aae940d4f.webp",
+      "thumb": "thumbs/2026/1b05477aae940d4f.webp",
+      "date": "2026-09-05T18:19:14+09:00",
+      "year": 2026,
+      "width": 1919,
+      "height": 1920,
+      "alt": "2026年9月5日 18:19 撮影の写真",
+      "dateSource": "filename"
+    },
+    {
+      "id": "e88d255d6bb82fd2",
+      "src": "photos/2026/e88d255d6bb82fd2.webp",
+      "thumb": "thumbs/2026/e88d255d6bb82fd2.webp",
+      "date": "2026-09-05T17:52:22+09:00",
+      "year": 2026,
+      "width": 1920,
+      "height": 1919,
+      "alt": "2026年9月5日 17:52 撮影の写真",
+      "dateSource": "filename"
+    },
+    {
+      "id": "243b05412a18c853",
+      "src": "photos/2026/243b05412a18c853.webp",
+      "thumb": "thumbs/2026/243b05412a18c853.webp",
+      "date": "2026-09-05T15:05:40+09:00",
+      "year": 2026,
+      "width": 1919,
+      "height": 1920,
+      "alt": "2026年9月5日 15:05 撮影の写真",
+      "dateSource": "filename"
+    },
+    {
+      "id": "1baa1b1d03b0cb7c",
+      "src": "photos/2026/1baa1b1d03b0cb7c.webp",
+      "thumb": "thumbs/2026/1baa1b1d03b0cb7c.webp",
+      "date": "2026-09-05T14:57:52+09:00",
+      "year": 2026,
+      "width": 1919,
+      "height": 1920,
+      "alt": "2026年9月5日 14:57 撮影の写真",
+      "dateSource": "filename"
+    },
+    {
+      "id": "d1a6b83c6508ac78",
+      "src": "photos/2026/d1a6b83c6508ac78.webp",
+      "thumb": "thumbs/2026/d1a6b83c6508ac78.webp",
+      "date": "2026-09-05T14:45:52+09:00",
+      "year": 2026,
+      "width": 1919,
+      "height": 1920,
+      "alt": "2026年9月5日 14:45 撮影の写真",
+      "dateSource": "filename"
+    },
+    {
+      "id": "82d0e66421ab2700",
+      "src": "photos/2026/82d0e66421ab2700.webp",
+      "thumb": "thumbs/2026/82d0e66421ab2700.webp",
+      "date": "2026-09-05T14:27:05+09:00",
+      "year": 2026,
+      "width": 1920,
+      "height": 1920,
+      "alt": "2026年9月5日 14:27 撮影の写真",
+      "dateSource": "filename"
+    },
+    {
+      "id": "ee53d3a0d12275cd",
+      "src": "photos/2026/ee53d3a0d12275cd.webp",
+      "thumb": "thumbs/2026/ee53d3a0d12275cd.webp",
+      "date": "2026-08-22T16:52:50+09:00",
+      "year": 2026,
+      "width": 1919,
+      "height": 1920,
+      "alt": "2026年8月22日 16:52 撮影の写真",
+      "dateSource": "exif"
+    },
+    {
+      "id": "5ffb1672728487a1",
+      "src": "photos/2026/5ffb1672728487a1.webp",
+      "thumb": "thumbs/2026/5ffb1672728487a1.webp",
+      "date": "2026-08-10T11:31:42+09:00",
+      "year": 2026,
+      "width": 1920,
+      "height": 1919,
+      "alt": "2026年8月10日 11:31 撮影の写真",
+      "dateSource": "exif"
+    },
+    {
+      "id": "93f7bddd29a13eb7",
+      "src": "photos/2026/93f7bddd29a13eb7.webp",
+      "thumb": "thumbs/2026/93f7bddd29a13eb7.webp",
+      "date": "2026-07-19T13:38:58+09:00",
+      "year": 2026,
+      "width": 1919,
+      "height": 1920,
+      "alt": "2026年7月19日 13:38 撮影の写真",
+      "dateSource": "exif"
+    },
+    {
+      "id": "f35b76a71119116e",
+      "src": "photos/2026/f35b76a71119116e.webp",
+      "thumb": "thumbs/2026/f35b76a71119116e.webp",
+      "date": "2026-07-19T13:00:54+09:00",
+      "year": 2026,
+      "width": 1919,
+      "height": 1920,
+      "alt": "2026年7月19日 13:00 撮影の写真",
+      "dateSource": "exif"
+    },
+    {
+      "id": "1da979efb4a99fb4",
+      "src": "photos/2026/1da979efb4a99fb4.webp",
+      "thumb": "thumbs/2026/1da979efb4a99fb4.webp",
+      "date": "2026-07-19T12:35:03+09:00",
+      "year": 2026,
+      "width": 1919,
+      "height": 1920,
+      "alt": "2026年7月19日 12:35 撮影の写真",
+      "dateSource": "exif"
+    },
+    {
+      "id": "23d1bc88ec45483c",
+      "src": "photos/2026/23d1bc88ec45483c.webp",
+      "thumb": "thumbs/2026/23d1bc88ec45483c.webp",
+      "date": "2026-07-19T07:17:03+09:00",
+      "year": 2026,
+      "width": 1919,
+      "height": 1920,
+      "alt": "2026年7月19日 07:17 撮影の写真",
+      "dateSource": "exif"
+    }
+  ]
+}

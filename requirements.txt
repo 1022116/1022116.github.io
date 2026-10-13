@@ -1,0 +1,16 @@
+# 写真ビューア（同期仕様ID PV-SPEC-2026-10-v4 / 版 4.0）
+# 仮想環境で:  python -m pip install -r requirements.txt
+
+# 必須: 画像変換・検証
+Pillow>=10.1
+# 必須: 試験（publish.ps1 が毎回実行）
+pytest>=8.0
+
+# 推奨: iPhone の HEIC/HEIF を変換する場合。
+# インストールできない環境ではこの行を削除しても動作します（HEIC はスキップしてログに記録）。
+pillow-heif>=0.16
+
+# 任意: ブラウザー試験（tests/test_ui.py）。未導入なら UI 試験は自動でスキップされます。
+# 使う場合は次の2行を実行:
+#   python -m pip install playwright
+#   python -m playwright install chromium
