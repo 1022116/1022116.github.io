@@ -7,43 +7,35 @@
    デザイン: 「作品目録」— 写真を作品として扱い、一枚ずつに目録番号（古い順の通し番号）を振る。
    ・名前は上部バーに小さく、年は大きな文字の索引として並べる（参考: ポートフォリオサイトのカテゴリー一覧）
    ・情報は小さな文字で左右に振り分け、線や箱で区切らず余白で区切る
-   ・全画面表示は白い壁に一枚を掛けるように見せ、操作は写真の下にまとめる
-   欧文フォント: Albert Sans（SIL Open Font License 1.1、fonts/OFL.txt）。外部配信は使わず同梱。 */
+   ・生成り色の紙に黒い手書き文字で書き添えるように見せる
+   ・全画面表示は生成りの壁に一枚を掛けるように見せ、操作は写真の下にまとめる
+   フォント: Klee One（手書き風。SIL Open Font License 1.1、fonts/OFL.txt）。画面に出る文字（英数字・かな・画面の文言の漢字）
+   だけを取り出して同梱し、外部配信は使わない。含まれない文字は端末の日本語書体で表示される。 */
 
 @font-face {
-  font-family: "Albert Sans";
+  font-family: "Klee One";
   font-style: normal;
-  font-weight: 100 900;
+  font-weight: 400;
   font-display: swap;
-  src: url("../fonts/albert-sans-latin-wght-normal.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  src: url("../fonts/klee-one-subset.woff2") format("woff2");
 }
 
+/* 色: いつも生成り色の背景に黒い文字（スマホのダークモードでも切り替えない）。
+   選んでいる年は色ではなく下線で示す */
 :root {
-  --bg: #ffffff;
-  --ink: #1e2125;
-  --muted: #8a9099;
-  --tile: #eef0f2;
+  --bg: #f4efe4;   /* 生成り色（漂白していない木綿や紙の色） */
+  --ink: #000000;
+  --muted: #9a9284; /* 読込中の輪だけに使う（文字には使わない） */
+  --tile: #e8e1d3;  /* 読込前の写真の場所。背景より少し濃い生成り */
   --focus: #2f6feb;
-  --bar: rgba(255, 255, 255, 0.94);
+  --bar: rgba(244, 239, 228, 0.94);
   --side: 16px;
   --col-gap: 12px;
   --row-gap: 28px;
   --maxw: 1280px;
-  --latin: "Albert Sans", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
-  --ja: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", Meiryo, sans-serif;
-  color-scheme: light dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #000000;
-    --ink: #eceef1;
-    --muted: #8d939b;
-    --tile: #141618;
-    --focus: #6ea0ff;
-    --bar: rgba(0, 0, 0, 0.88);
-  }
+  --latin: "Klee One", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
+  --ja: "Klee One", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif;
+  color-scheme: light;
 }
 
 *,
@@ -62,8 +54,9 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
-  /* 欧文・数字は Albert Sans、和文はシステムの日本語書体 */
-  font-family: "Albert Sans", var(--ja);
+  /* 手書き風の Klee One（英数字・かな・画面の文言）。含まれない文字は端末の日本語書体 */
+  font-family: var(--ja);
+  font-synthesis: none; /* 太字・斜体を機械的に作らない（手書きの線が崩れるため） */
   font-size: 15px;
   line-height: 1.6;
   -webkit-tap-highlight-color: transparent;
@@ -147,14 +140,20 @@ button {
   border: 0;
   border-radius: 6px;
   background: none;
-  color: var(--muted);
+  color: var(--ink);
   font-size: 12px;
   letter-spacing: 0.06em;
   cursor: pointer;
-  transition: color 0.2s ease;
+  transition: opacity 0.2s ease;
 }
-.bar-year:hover,
-.bar-year[aria-current="true"] { color: var(--ink); }
+.bar-year[aria-current="true"] {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 5px;
+}
+@media (hover: hover) {
+  .bar-year:not([aria-current="true"]):hover { opacity: 0.55; }
+}
 .bar-year:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 
 /* ---- 年の索引（参考サイトのカテゴリー一覧の位置。大きな文字で並べる） --------------- */
@@ -179,17 +178,23 @@ button {
   border: 0;
   border-radius: 6px;
   background: none;
-  color: var(--muted);
+  color: var(--ink);
   font-size: clamp(24px, calc(10px + 3vw), 54px);
   font-weight: 400;
   line-height: 1.5;
   letter-spacing: 0.005em;
   text-align: left;
   cursor: pointer;
-  transition: color 0.2s ease;
+  transition: opacity 0.2s ease;
 }
-.year-tab:hover,
-.year-tab[aria-selected="true"] { color: var(--ink); }
+.year-tab[aria-selected="true"] {
+  text-decoration: underline;
+  text-decoration-thickness: max(1px, 0.04em);
+  text-underline-offset: 0.16em;
+}
+@media (hover: hover) {
+  .year-tab:not([aria-selected="true"]):hover { opacity: 0.55; }
+}
 .year-tab:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -205,7 +210,7 @@ button {
   min-height: 1.6em;
   margin: 0 auto;
   padding: 12px max(var(--side), env(safe-area-inset-right)) 0 max(var(--side), env(safe-area-inset-left));
-  color: var(--muted);
+  color: var(--ink);
   font-size: 12px;
   letter-spacing: 0.04em;
 }
@@ -220,7 +225,7 @@ button {
   max-width: var(--maxw);
   margin: 0 auto;
   padding: 56px max(var(--side), env(safe-area-inset-right)) 72px max(var(--side), env(safe-area-inset-left));
-  color: var(--muted);
+  color: var(--ink);
 }
 .status[data-state="ready"] { display: none; }
 .status[data-state="error"] .status-text { color: var(--ink); }
@@ -362,7 +367,7 @@ button {
   letter-spacing: 0.02em;
 }
 .tile-no { color: var(--ink); }
-.tile-date { color: var(--muted); white-space: nowrap; }
+.tile-date { white-space: nowrap; }
 
 .tile-fallback {
   position: absolute;
@@ -374,7 +379,7 @@ button {
   align-items: center;
   justify-content: center;
   padding: 6px;
-  color: var(--muted);
+  color: var(--ink);
   font-size: 12px;
   text-align: center;
 }
@@ -426,13 +431,13 @@ button {
   margin: 0;
   font-family: var(--latin);
   font-size: 22px;
-  font-weight: 300;
-  letter-spacing: -0.01em;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 .viewer-counter {
   margin: 0;
-  color: var(--muted);
+  color: var(--ink);
   font-family: var(--latin);
   font-size: 12px;
   letter-spacing: 0.04em;
@@ -492,7 +497,7 @@ button {
 .viewer-error {
   position: absolute;
   margin: 0;
-  color: var(--muted);
+  color: var(--ink);
   font-size: 14px;
 }
 
@@ -507,7 +512,7 @@ button {
 
 .viewer-caption {
   margin: 0;
-  color: var(--muted);
+  color: var(--ink);
   font-size: 13px;
   letter-spacing: 0.02em;
   text-align: center;
