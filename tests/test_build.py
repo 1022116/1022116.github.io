@@ -1,4 +1,4 @@
-"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v5 / 版 5.0）
+"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v7 / 版 7.0）
 
 試験画像を一時ディレクトリに生成し、build → JSON → 検証 → 再生成までの状態遷移とファイル更新を確認する。
 分類: 正常 / 境界 / 異常 / 競合 / 移行 / 回帰
@@ -185,7 +185,7 @@ class TestNormal:
         raw = (project / "data" / "photos.json").read_bytes()
         assert not raw.startswith(b"\xef\xbb\xbf") and b"\r\n" not in raw
         doc = json.loads(raw.decode("utf-8"))
-        assert doc["specId"] == "PV-SPEC-2026-10-v5" and doc["specVersion"] == "5.0"
+        assert doc["specId"] == "PV-SPEC-2026-10-v7" and doc["specVersion"] == "7.0"
         assert doc["count"] == 1 and doc["years"] == [2025] and doc["timezone"] == "Asia/Tokyo"
         e = doc["photos"][0]
         assert set(e) == set(C.REQUIRED_KEYS)
@@ -813,9 +813,9 @@ class TestRegression:
                  "tools/validate_build.py", "tools/publish.ps1", "tools/pv_common.py", "tests/test_build.py"]
         for rel in files:
             text = (PROJECT_ROOT / rel).read_text(encoding="utf-8-sig")
-            assert "PV-SPEC-2026-10-v5" in text, rel
-            assert "5.0" in text, rel
-        assert C.SPEC_ID == "PV-SPEC-2026-10-v5" and C.SPEC_VERSION == "5.0"
+            assert "PV-SPEC-2026-10-v7" in text, rel
+            assert "7.0" in text, rel
+        assert C.SPEC_ID == "PV-SPEC-2026-10-v7" and C.SPEC_VERSION == "7.0"
         assert json.loads((PROJECT_ROOT / "data" / "photos.json").read_text(encoding="utf-8"))["specId"] == C.SPEC_ID
 
     def test_publish_script_is_utf8_with_bom(self):
@@ -904,7 +904,7 @@ class TestGuideSync:
     def test_readme_uses_the_guide_commands(self):
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
         for cmd in (
-            "PV-SPEC-2026-10-v5 / version 5.0",
+            "PV-SPEC-2026-10-v7 / version 7.0",
             "Python 3.11",
             "python -m venv .venv",
             r".\.venv\Scripts\Activate.ps1",
@@ -1030,7 +1030,7 @@ class TestFilenameDate:
         assert any("同期仕様ID" in e for e in V.validate(project).errors)
         build_ok(project)
         doc = load_photos(project)
-        assert doc["specId"] == "PV-SPEC-2026-10-v5" and doc["photos"][0]["dateSource"] == "filename"
+        assert doc["specId"] == "PV-SPEC-2026-10-v7" and doc["photos"][0]["dateSource"] == "filename"
         assert run_validate(project).returncode == 0
 
 
@@ -1053,3 +1053,90 @@ class TestBundledFont:
     def test_publish_script_includes_fonts(self):
         text = (PROJECT_ROOT / "tools" / "publish.ps1").read_text(encoding="utf-8-sig")
         assert "'fonts'" in text
+
+
+# ===========================================================================
+# 仕様 v6: 表紙の写真（config.json の coverPhoto）
+# ===========================================================================
+class TestCoverPhoto:
+    def _setup(self, project, cover=None):
+        s = src(project)
+        make_image(s / "2026" / "new.jpg", label="N", exif_dt="2026:05:01 10:00:00")
+        make_image(s / "2025" / "old.jpg", label="O", exif_dt="2025:03:01 10:00:00")
+        make_image(s / "2024" / "older.jpg", label="R", exif_dt="2024:01:01 10:00:00")
+        cfg = {"sourceDir": "source_photos"}
+        if cover is not None:
+            cfg["coverPhoto"] = cover
+        (project / "config.json").write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    def test_default_cover_is_newest(self, project):
+        self._setup(project)
+        build_ok(project)
+        doc = load_photos(project)
+        assert doc["cover"] == doc["photos"][0]["id"]
+
+    @pytest.mark.parametrize("value", ["2025/old.jpg", "2025\\old.jpg", "source_photos/2025/old.jpg", "source_photos\\2025\\old.jpg", " 2025/old.jpg "])
+    def test_chosen_cover_by_relative_path(self, project, value):
+        self._setup(project, value)
+        r = build_ok(project)
+        doc = load_photos(project)
+        assert doc["cover"] == by_source(project)["2025/old.jpg"]["id"]
+        assert "表紙の写真:" in r.stdout
+        text = (project / "data" / "photos.json").read_text(encoding="utf-8")
+        assert "old.jpg" not in text and "source_photos" not in text  # PC内のファイル名は公開しない
+        assert run_validate(project).returncode == 0
+
+    def test_chosen_cover_by_absolute_path_inside_source(self, project):
+        self._setup(project, str((project / "source_photos" / "2024" / "older.jpg").resolve()))
+        build_ok(project)
+        assert load_photos(project)["cover"] == by_source(project)["2024/older.jpg"]["id"]
+
+    @pytest.mark.parametrize("value", ["2025/nothing.jpg", "../config.json"])
+    def test_missing_or_outside_cover_falls_back_with_warning(self, project, value):
+        self._setup(project, value)
+        r = build_ok(project)
+        doc = load_photos(project)
+        assert doc["cover"] == doc["photos"][0]["id"]
+        assert "表紙に指定した写真" in r.stdout and "WARNING" in r.stdout
+
+    def test_cover_pointing_to_duplicate_content(self, project):
+        self._setup(project, "dup/copy_of_old.jpg")
+        (src(project) / "dup").mkdir()
+        shutil.copy2(src(project) / "2025" / "old.jpg", src(project) / "dup" / "copy_of_old.jpg")
+        build_ok(project)
+        doc = load_photos(project)
+        assert doc["count"] == 3  # 重複は1枚にまとまる
+        assert doc["cover"] == by_source(project)["2025/old.jpg"]["id"]
+
+    def test_corrupt_cover_falls_back(self, project):
+        self._setup(project, "broken.jpg")
+        (src(project) / "broken.jpg").write_bytes(b"\xff\xd8broken")
+        r = build_ok(project)
+        assert "変換できなかった" in r.stdout
+        doc = load_photos(project)
+        assert doc["cover"] == doc["photos"][0]["id"]
+
+    def test_cover_type_is_validated_in_config(self, project):
+        self._setup(project)
+        (project / "config.json").write_text(json.dumps({"coverPhoto": 3}), encoding="utf-8")
+        r = run_build(project)
+        assert r.returncode == 1 and "coverPhoto" in r.stdout
+
+    def test_validator_rejects_cover_not_in_list(self, project):
+        self._setup(project)
+        build_ok(project)
+        doc = load_photos(project)
+        doc["cover"] = "0123456789abcdef"
+        write_json(project, doc)
+        assert any("表紙の写真（cover）" in e for e in V.validate(project).errors)
+
+    def test_cover_reused_from_cache_keeps_choice(self, project):
+        self._setup(project, "2025/old.jpg")
+        build_ok(project)
+        r = build_ok(project)
+        assert "再利用 3" in r.stdout
+        assert load_photos(project)["cover"] == by_source(project)["2025/old.jpg"]["id"]
+
+    def test_config_example_documents_cover(self):
+        cfg = json.loads((PROJECT_ROOT / "config.example.json").read_text(encoding="utf-8"))
+        assert "coverPhoto" in cfg and cfg["coverPhoto"] == ""

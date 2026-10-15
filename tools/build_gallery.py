@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""写真ビューア 生成スクリプト（同期仕様ID PV-SPEC-2026-10-v5 / 版 5.0）
+"""写真ビューア 生成スクリプト（同期仕様ID PV-SPEC-2026-10-v7 / 版 7.0）
 
 原本フォルダー（既定: source_photos/）を再帰走査し、公開用の
   photos/<年>/<id>.webp   … 詳細画像（元の縦横比・長辺最大1920px・メタデータなし）
@@ -9,6 +9,7 @@
 
 安全設計:
   - 原本は読み取りのみ（削除・上書き・移動をしない）
+  - 表紙の写真: config.json の coverPhoto（未指定ならいちばん新しい写真）。JSON には写真IDだけを書く
   - 撮影日時: EXIF DateTimeOriginal → ファイル名の日時（例 2026-09-05_14-45-52）→ 更新日時 の順（仕様 v4）
   - .build/ 内の一時ディレクトリへ全量生成 → validate_build で検証 → 合格時だけ置換
   - 置換中に失敗したら元に戻す（ジャーナル記録。強制終了後は次回起動時に自動復旧）
@@ -295,6 +296,51 @@ def process_one(task: dict) -> dict:
         "exifDate": C.to_iso_jst(exif_dt) if exif_dt else None,
         "reused": False,
     }
+
+
+# ---------------------------------------------------------------------------
+# 表紙の写真（仕様 v6）
+# ---------------------------------------------------------------------------
+def resolve_cover(cfg: dict, src_dir: Path, results: list) -> str | None:
+    """config.json の coverPhoto（原本フォルダー内のファイル）を公開用の写真IDにする。
+
+    ・空なら、いちばん新しい写真（results の先頭）
+    ・「source_photos/〜」のようにフォルダー名から書いても、Windows の \\ 区切りや絶対パスでもよい
+    ・見つからない／原本フォルダーの外／変換できなかった場合は警告して、いちばん新しい写真にする
+    公開JSONには写真IDだけを書き、PC内のファイル名やパスは書かない。
+    """
+    newest = results[0]["id"] if results else None
+    raw = (cfg.get("coverPhoto") or "").strip()
+    if not raw:
+        return newest
+    root = src_dir.resolve()
+    cand = Path(os.path.expanduser(raw.replace("\\", "/")))
+    tries = [cand] if cand.is_absolute() else [root / cand]
+    if not cand.is_absolute() and cand.parts and cand.parts[0] == root.name:
+        tries.append(root.joinpath(*cand.parts[1:]))
+    path = None
+    for t in tries:
+        t = t.resolve()
+        if t.is_file():
+            if t != root and root not in t.parents:
+                log.warning("表紙に指定した写真が原本フォルダーの外にあります: %s（いちばん新しい写真を表紙にします）", raw)
+                return newest
+            path = t
+            break
+    if path is None:
+        log.warning("表紙に指定した写真が見つかりません: %s（いちばん新しい写真を表紙にします）", raw)
+        return newest
+    try:
+        digest = sha256_file(path)
+    except OSError as exc:
+        log.warning("表紙に指定した写真を読めません: %s (%s)（いちばん新しい写真を表紙にします）", raw, exc)
+        return newest
+    for r in results:
+        if r["sha"] == digest:  # 同じ内容の写真が別名で採用されていても一致する
+            log.info("表紙の写真: %s", raw)
+            return r["id"]
+    log.warning("表紙に指定した写真は変換できなかったため使えません: %s（いちばん新しい写真を表紙にします）", raw)
+    return newest
 
 
 # ---------------------------------------------------------------------------
@@ -603,6 +649,7 @@ def build(
             for r in results
         ]
         years = sorted({p["year"] for p in photos}, reverse=True)
+        cover_id = resolve_cover(cfg, src_dir, results)
         doc = {
             "specId": C.SPEC_ID,
             "specVersion": C.SPEC_VERSION,
@@ -611,6 +658,7 @@ def build(
             "timezone": C.TIMEZONE_NAME,
             "count": len(photos),
             "years": years,
+            "cover": cover_id,
             "photos": photos,
         }
         try:

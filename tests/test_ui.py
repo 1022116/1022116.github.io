@@ -1,4 +1,4 @@
-"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v5 / 版 5.0）
+"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v7 / 版 7.0）
 
 Playwright（Chromium）でスマートフォン画面をエミュレートし、試験画像から生成したサイトを
 GitHub Pages と同じ「リポジトリ名のサブパス」で配信して確認する。
@@ -33,7 +33,8 @@ from pvtest_helpers import (
 playwright_api = pytest.importorskip("playwright.sync_api", reason="Playwright 未導入（UI試験をスキップ）")
 
 PALETTE = [(222, 94, 84), (240, 170, 70), (90, 160, 120), (70, 120, 200), (150, 100, 190), (60, 60, 70)]
-YEARS = ((2026, 7), (2025, 40), (2024, 30), (2023, 2))  # 合計79枚（初回表示60枚＋追加表示）
+YEARS = ((2026, 72), (2025, 12), (2024, 6), (2023, 2))  # 合計92枚。最初に開く2026年は72枚（初回表示60枚＋追加表示）
+N_NEWEST = 72  # 最初に開く年（いちばん新しい年）の枚数
 
 
 # ---------------------------------------------------------------------------
@@ -46,6 +47,12 @@ class _QuietHandler(SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Cache-Control", "no-cache")
         super().end_headers()
+
+    def send_head(self):
+        # 標準のサーバーは更新日時を秒単位で比べるため、同じ秒に作り直したファイルを「変更なし(304)」と答えてしまう。
+        # 試験では常に中身を返す（GitHub Pages は内容で比較するので実際のサイトには影響しない）
+        del self.headers["If-Modified-Since"]
+        return super().send_head()
 
 
 class _QuietServer(ThreadingHTTPServer):
@@ -220,7 +227,7 @@ class Touch:
 # ===========================================================================
 @pytest.mark.parametrize("device", ["iPhone 13", "iPhone SE", "Pixel 5"])
 def test_portfolio_grid_on_phones(pw, site, device):
-    """S-05（v5）: 先頭の1枚を元の縦横比で大きく、以降は正方形の2列。各写真に番号と撮影日。"""
+    """S-05（v7）: 最初はいちばん新しい年。表紙の写真を元の縦横比で大きく、その下に正方形の2列。各写真に番号と撮影日。"""
     p, browser = pw
     ctx = browser.new_context(**p.devices[device])
     try:
@@ -228,18 +235,18 @@ def test_portfolio_grid_on_phones(pw, site, device):
         vw = page.evaluate("document.documentElement.clientWidth")
         grid = page.locator("#grid").bounding_box()
         assert 12 <= grid["x"] <= 24 and abs((grid["x"] + grid["width"]) - (vw - grid["x"])) < 1  # 左右に同じ余白
-        page.wait_for_function("document.querySelector('#grid > li img').naturalWidth > 0")
-        hero = page.evaluate(
-            """(() => { const li = document.querySelector('#grid > li'); const img = li.querySelector('img');
-               const r = img.getBoundingClientRect(); return { hero: li.classList.contains('is-hero'),
+        page.wait_for_function("document.getElementById('cover-img').naturalWidth > 0")
+        cover = page.evaluate(
+            """(() => { const img = document.getElementById('cover-img'); const r = img.getBoundingClientRect();
+               return { visible: !document.getElementById('cover').hidden, id: img.dataset.id,
                usesDetail: img.getAttribute('src').startsWith('photos/'), ratio: r.width / r.height,
-               natural: img.naturalWidth / img.naturalHeight, liW: li.getBoundingClientRect().width }; })()"""
+               natural: img.naturalWidth / img.naturalHeight, above: r.bottom <= document.getElementById('grid').getBoundingClientRect().top }; })()"""
         )
-        assert hero["hero"] and hero["usesDetail"]
-        assert abs(hero["liW"] - grid["width"]) < 1  # 横幅いっぱいの行を使う
-        assert abs(hero["ratio"] - hero["natural"]) < 0.02  # 元の縦横比
+        assert cover["visible"] and cover["usesDetail"] and cover["above"]
+        assert cover["id"] == site["ids"][0]  # cover 未設定 → いちばん新しい写真
+        assert abs(cover["ratio"] - cover["natural"]) < 0.02  # 元の縦横比
         boxes = page.eval_on_selector_all(
-            "#grid > li:not(.is-hero) .tile", "els => els.slice(0, 3).map(e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })"
+            "#grid > li .tile", "els => els.slice(0, 3).map(e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })"
         )
         (x1, y1, w1, h1), (x2, y2, w2, _), (x3, y3, _, _) = boxes
         assert y1 == y2 and y3 > y1 and x3 == x1  # 2列で折り返す
@@ -257,15 +264,15 @@ def test_portfolio_grid_on_phones(pw, site, device):
 
 def test_desktop_uses_three_columns_with_wide_gaps(desktop, site):
     page, w = open_page(desktop, site["main"])
-    tops = page.eval_on_selector_all("#grid > li:not(.is-hero) .tile", "els => els.slice(0, 4).map(e => e.getBoundingClientRect().top)")
+    tops = page.eval_on_selector_all("#grid > li .tile", "els => els.slice(0, 4).map(e => e.getBoundingClientRect().top)")
     assert tops[0] == tops[1] == tops[2] < tops[3]
-    gap = page.evaluate("(() => { const t = document.querySelectorAll('#grid > li:not(.is-hero) .tile'); return t[1].getBoundingClientRect().left - t[0].getBoundingClientRect().right; })()")
+    gap = page.evaluate("(() => { const t = document.querySelectorAll('#grid > li .tile'); return t[1].getBoundingClientRect().left - t[0].getBoundingClientRect().right; })()")
     assert gap >= 16
     w.assert_clean()
 
 
-def test_hero_space_is_reserved_before_image_loads(phone, site):
-    """先頭の大きな写真は読み込み前から場所を確保し、読み込み後に一覧がずれない。"""
+def test_cover_space_is_reserved_before_image_loads(phone, site):
+    """表紙の大きな写真は読み込み前から場所を確保し、読み込み後に一覧がずれない。"""
     page = phone.new_page()
     w = Watch(page)
     held = []
@@ -273,16 +280,15 @@ def test_hero_space_is_reserved_before_image_loads(phone, site):
     page.route(f"**/{first_src}", lambda route: held.append(route))
     page.goto(site["main"])
     page.wait_for_selector("html[data-pv=ready]")
-    before = page.evaluate("document.querySelector('#grid > li:nth-child(2)').getBoundingClientRect().top")
-    hero_h = page.evaluate("document.querySelector('#grid > li.is-hero .tile').getBoundingClientRect().height")
-    assert hero_h > 100
+    before = page.evaluate("document.querySelector('#grid > li').getBoundingClientRect().top")
+    assert page.evaluate("document.getElementById('cover-btn').getBoundingClientRect().height") > 100
     for _ in range(50):
         if held:
             break
         page.wait_for_timeout(50)
     held[0].continue_()
-    page.wait_for_function("document.querySelector('#grid > li.is-hero img').naturalWidth > 0")
-    after = page.evaluate("document.querySelector('#grid > li:nth-child(2)').getBoundingClientRect().top")
+    page.wait_for_function("document.getElementById('cover-img').naturalWidth > 0")
+    after = page.evaluate("document.querySelector('#grid > li').getBoundingClientRect().top")
     assert abs(after - before) < 1
     w.assert_clean()
 
@@ -293,16 +299,14 @@ def test_cover_title_meta_and_catalogue_numbers(phone, site):
     assert page.evaluate("document.getElementById('app-title').classList.contains('is-ja')")
     years = site["doc"]["years"]
     assert page.inner_text("#photo-range") == f"{years[-1]}–{years[0]}"
-    assert page.get_attribute("#tab-2025", "data-count") == "40"
-    # 年で絞り込んでも目録番号は変わらない（通し番号）
-    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-    page.wait_for_function("document.querySelectorAll('#grid > li').length === 79")
-    all_nos = dict(zip(tile_ids(page), page.eval_on_selector_all("#grid > li .tile-no", "els => els.map(e => e.textContent)")))
+    assert page.get_attribute("#tab-2025", "data-count") == "12"
+    # 年で絞り込んでも目録番号は全写真の通し番号（いちばん古い写真が 01）
+    total = len(site["ids"])
     page.click("#tab-2024")
     ids24 = tile_ids(page)
     nos24 = page.eval_on_selector_all("#grid > li .tile-no", "els => els.map(e => e.textContent)")
-    assert [all_nos[i] for i in ids24] == nos24
-    assert page.locator("#grid > li.is-hero").count() == 1  # 絞り込み後も先頭は大きく
+    assert nos24 == [f"{total - site['ids'].index(i):02d}" for i in ids24] and len(ids24) == 6
+    assert page.is_visible("#cover")  # 表紙はどの年でも表示
     page.click(".tile[data-index='0']")
     assert page.inner_text("#viewer-no") == "No. " + nos24[0]
     w.assert_clean()
@@ -318,17 +322,17 @@ def test_latin_title_uses_bundled_font(pw, site):
         def handler(route):
             resp = route.fetch()
             doc = resp.json()
-            doc["title"] = "Photographs"
+            doc["title"] = "Daily"
             route.fulfill(response=resp, json=doc)
 
         page.route("**/data/photos.json", handler)
         page.goto(site["main"])
         page.wait_for_selector("html[data-pv=ready]")
-        assert page.inner_text("#app-title") == "Photographs"
+        assert page.inner_text("#app-title") == "Daily"
         assert not page.evaluate("document.getElementById('app-title').classList.contains('is-ja')")
         assert page.evaluate("document.fonts.check('200 64px \"Albert Sans\"')")
         assert any(u == site["main"] + "fonts/albert-sans-latin-wght-normal.woff2" for u in w.requests)
-        assert page.title() == "Photographs"
+        assert page.title() == "Daily"
         lines = page.evaluate("Math.round(document.getElementById('app-title').getBoundingClientRect().height / parseFloat(getComputedStyle(document.getElementById('app-title')).lineHeight))")
         assert lines == 1  # 画面幅いっぱいでも1行に収まる
         w.assert_clean()
@@ -338,13 +342,20 @@ def test_latin_title_uses_bundled_font(pw, site):
 
 def test_year_tabs_are_generated_newest_first(phone, site):
     page, w = open_page(phone, site["main"])
-    assert tab_texts(page) == ["すべて", "2026", "2025", "2024", "2023"]
-    assert selected_tab(page) == "すべて"
-    assert page.inner_text("#photo-count") == "79枚"
+    assert tab_texts(page) == ["2026", "2025", "2024", "2023"]  # 「すべて」はない（v7）
+    assert page.locator("#tab-all").count() == 0
+    assert selected_tab(page) == "2026"  # 最初はいちばん新しい年
+    assert page.inner_text("#photo-count") == f"2026年の{N_NEWEST}枚"
+    assert tile_ids(page) == site["ids"][:60]
+    assert scroll_y(page) == 0 and page.is_visible("#cover")
     page.click("#tab-2025")
     expected = [p["id"] for p in site["doc"]["photos"] if p["year"] == 2025]
-    assert tile_ids(page) == expected and len(expected) == 40
-    assert page.inner_text("#photo-count") == "2025年の40枚"
+    assert tile_ids(page) == expected and len(expected) == 12
+    assert page.inner_text("#photo-count") == "2025年の12枚"
+    # 選んだ年の一覧の先頭（枚数の行）が上部バーのすぐ下に来る
+    gap = page.evaluate("document.querySelector('.site-meta').getBoundingClientRect().top - document.querySelector('.site-bar').getBoundingClientRect().bottom")
+    assert abs(gap) <= 1 and scroll_y(page) > 0
+    assert anchor_id(page) == expected[0]
     w.assert_clean()
 
 
@@ -362,16 +373,16 @@ def test_lazy_loading_and_incremental_rendering(phone, site):
     assert page.locator(".tile").count() == 60  # 最初は60枚だけDOMに追加
     assert page.eval_on_selector_all(".tile img", "els => els.every(e => e.loading === 'lazy')")
     first = {u for u in w.requests if "/thumbs/" in u}
-    assert len(first) < 79
+    assert len(first) < N_NEWEST
     for _ in range(30):
         page.mouse.wheel(0, 1500)
         page.wait_for_timeout(120)
-        if page.locator(".tile").count() == 79:
+        if page.locator(".tile").count() == N_NEWEST:
             break
-    assert page.locator(".tile").count() == 79
+    assert page.locator(".tile").count() == N_NEWEST
     page.wait_for_timeout(800)
     assert len({u for u in w.requests if "/thumbs/" in u}) > len(first)
-    assert len(set(tile_ids(page))) == 79
+    assert len(set(tile_ids(page))) == N_NEWEST
     w.assert_clean()
 
 
@@ -382,29 +393,29 @@ def test_viewer_navigation_with_buttons_and_keys(phone, site):
     page, w = open_page(phone, site["main"])
     ids = site["ids"]
     page.click(".tile[data-index='2']")
-    assert viewer_open(page) and counter(page) == "3 / 79"
+    assert viewer_open(page) and counter(page) == "3 / 72"
     assert page.get_attribute("#viewer-img", "data-id") == ids[2]
     page.wait_for_function("document.getElementById('viewer-img').naturalWidth > 0")
     page.click("#viewer-next")
-    assert counter(page) == "4 / 79"
+    assert counter(page) == "4 / 72"
     page.click("#viewer-prev")
     page.click("#viewer-prev")
-    assert counter(page) == "2 / 79"
+    assert counter(page) == "2 / 72"
     page.keyboard.press("ArrowRight")
-    assert counter(page) == "3 / 79"
+    assert counter(page) == "3 / 72"
     page.keyboard.press("ArrowLeft")
-    assert counter(page) == "2 / 79"
+    assert counter(page) == "2 / 72"
     page.keyboard.press("Home")
-    assert counter(page) == "1 / 79" and page.is_disabled("#viewer-prev")
+    assert counter(page) == "1 / 72" and page.is_disabled("#viewer-prev")
     page.keyboard.press("ArrowLeft")
-    assert counter(page) == "1 / 79"
+    assert counter(page) == "1 / 72"
     page.keyboard.press("End")
-    assert counter(page) == "79 / 79" and page.is_disabled("#viewer-next")
-    assert page.get_attribute("#viewer-img", "data-id") == ids[78]
+    assert counter(page) == "72 / 72" and page.is_disabled("#viewer-next")
+    assert page.get_attribute("#viewer-img", "data-id") == ids[71]
     page.keyboard.press("Escape")
     assert not viewer_open(page)
     assert page.evaluate("document.documentElement.classList.contains('viewer-open')") is False
-    assert page.evaluate("document.activeElement.dataset.index") == "78"  # 最後に見た写真へフォーカスが戻る
+    assert page.evaluate("document.activeElement.dataset.index") == "71"  # 最後に見た写真へフォーカスが戻る
     w.assert_clean()
 
 
@@ -428,15 +439,15 @@ def test_swipe_left_and_right(phone, site):
     t = Touch(page)
     x, y = stage_center(page)
     t.swipe(x + 100, y, -220)
-    assert counter(page) == "2 / 79"
+    assert counter(page) == "2 / 72"
     t.swipe(x - 100, y, 220)
-    assert counter(page) == "1 / 79"
+    assert counter(page) == "1 / 72"
     t.swipe(x - 100, y, 220)  # 先頭ではそれ以上戻らない
-    assert counter(page) == "1 / 79"
+    assert counter(page) == "1 / 72"
     t.swipe(x, y, -20)  # 小さな動きはスワイプとみなさない
-    assert counter(page) == "1 / 79"
+    assert counter(page) == "1 / 72"
     t.swipe(x, y + 100, 0, -250)  # 縦方向は無視
-    assert counter(page) == "1 / 79"
+    assert counter(page) == "1 / 72"
     page.wait_for_timeout(300)
     assert page.evaluate("document.getElementById('viewer-img').style.transform") == ""
     w.assert_clean()
@@ -450,13 +461,13 @@ def test_rapid_next_clicks(phone, site):
     page.click(".tile[data-index='0']")
     for _ in range(12):
         page.locator("#viewer-next").click(delay=0)
-    assert counter(page) == "13 / 79"
+    assert counter(page) == "13 / 72"
     page.evaluate("() => { for (let i = 0; i < 300; i++) document.getElementById('viewer-next').click(); }")
-    assert counter(page) == "79 / 79"
-    assert page.get_attribute("#viewer-img", "data-id") == site["ids"][78]
+    assert counter(page) == "72 / 72"
+    assert page.get_attribute("#viewer-img", "data-id") == site["ids"][71]
     assert page.evaluate("document.activeElement.id") in ("viewer-prev", "viewer-close")  # 無効化されたボタンにフォーカスを残さない
     page.evaluate("() => { for (let i = 0; i < 300; i++) document.getElementById('viewer-prev').click(); }")
-    assert counter(page) == "1 / 79"
+    assert counter(page) == "1 / 72"
     page.wait_for_function("document.getElementById('viewer-img').naturalWidth > 0")
     assert not page.evaluate("document.getElementById('viewer-stage').classList.contains('is-loading')")
     w.assert_clean()
@@ -465,15 +476,15 @@ def test_rapid_next_clicks(phone, site):
 def test_rapid_year_tab_clicks(phone, site):
     page, w = open_page(phone, site["main"])
     page.evaluate("() => { const t = document.querySelectorAll('.year-tab'); for (let i = 0; i < 49; i++) t[i % t.length].click(); }")
-    assert selected_tab(page) == "2024"  # 48 % 5 = 3
+    assert selected_tab(page) == "2026"  # 48 % 4 = 0
     for _ in range(5):
         page.click("#tab-2023")
-        page.click("#tab-all")
+        page.click("#tab-2026")
     page.click("#tab-2025")
     expected = [p["id"] for p in site["doc"]["photos"] if p["year"] == 2025]
     assert tile_ids(page) == expected
     page.focus("#tab-2025")
-    for _ in range(12):  # キー連打（2025 の位置 2 から 12 回 → (2 + 12) % 5 = 4 → 2023）
+    for _ in range(14):  # キー連打（2025 の位置 1 から 14 回 → (1 + 14) % 4 = 3 → 2023）
         page.keyboard.press("ArrowRight")
     assert selected_tab(page) == "2023" and len(tile_ids(page)) == 2
     assert page.locator(".year-tab[aria-selected=true]").count() == 1
@@ -493,7 +504,7 @@ def test_rapid_close_and_reopen(phone, site):
     )
     assert not viewer_open(page)
     page.click(".tile[data-index='5']")
-    assert viewer_open(page) and counter(page) == "6 / 79"
+    assert viewer_open(page) and counter(page) == "6 / 72"
     page.click("#viewer-close")
     assert not viewer_open(page)
     w.assert_clean()
@@ -519,11 +530,11 @@ def test_close_during_swipe(phone, site, how):
     page.wait_for_timeout(200)
     assert not viewer_open(page)
     page.click(".tile[data-index='0']")
-    assert counter(page) == "1 / 79"
+    assert counter(page) == "1 / 72"
     assert page.evaluate("document.getElementById('viewer-img').style.transform") == ""
     assert not page.evaluate("document.getElementById('viewer-stage').classList.contains('is-dragging')")
     t.swipe(x + 100, y, -220)  # 再度開いた後のスワイプは正常
-    assert counter(page) == "2 / 79"
+    assert counter(page) == "2 / 72"
     w.assert_clean()
 
 
@@ -552,7 +563,7 @@ def test_deep_scroll_beyond_first_batch_is_restored(phone, site):
         page.wait_for_timeout(100)
     page.wait_for_timeout(500)
     y, anchor = scroll_y(page), anchor_id(page)
-    assert page.locator(".tile").count() == 79 and site["ids"].index(anchor) >= 60
+    assert page.locator(".tile").count() == N_NEWEST and site["ids"].index(anchor) >= 60
     page.reload()
     page.wait_for_selector("html[data-pv=ready]")
     page.wait_for_timeout(300)
@@ -577,30 +588,36 @@ def test_tab_switch_cancels_pending_scroll_save(phone, site):
     page.evaluate("() => { window.scrollTo(0, 1500); document.getElementById('tab-2025').click(); }")
     page.wait_for_timeout(600)
     saved = json.loads(page.evaluate("sessionStorage.getItem('pv:scroll')"))
-    assert saved["year"] == "2025" and saved["y"] == 0
+    first25 = [p["id"] for p in site["doc"]["photos"] if p["year"] == 2025][0]
+    assert saved["year"] == "2025" and saved["anchorId"] == first25 and saved["y"] == scroll_y(page) < 1500
     page.reload()
     page.wait_for_selector("html[data-pv=ready]")
     page.wait_for_timeout(300)
-    assert selected_tab(page) == "2025" and scroll_y(page) == 0
+    assert selected_tab(page) == "2025" and anchor_id(page) == first25 and abs(scroll_y(page) - saved["y"]) <= 2
     w.assert_clean()
 
 
 def test_removed_year_and_broken_storage_do_not_come_back(phone, site):
     page, w = open_page(phone, site["main"])
     # 離脱時の保存（pagehide）より後、app.js より前に書き込むため init script で注入する
-    page.add_init_script(
-        "localStorage.setItem('pv:selectedYear', '2019');"
-        "sessionStorage.setItem('pv:scroll', JSON.stringify({v: 1, year: 'all', anchorId: 'deadbeefdeadbeef', delta: 0, y: 500}));"
+    page.add_init_script(  # v6 以前に「すべて」を選んでいた人
+        "localStorage.setItem('pv:selectedYear', 'all');"
+        "sessionStorage.setItem('pv:scroll', JSON.stringify({v: 1, year: '2026', anchorId: 'deadbeefdeadbeef', delta: 0, y: 500}));"
     )
     page.reload()
     page.wait_for_selector("html[data-pv=ready]")
     page.wait_for_timeout(300)
-    assert selected_tab(page) == "すべて" and "2019" not in tab_texts(page)
-    assert page.evaluate("localStorage.getItem('pv:selectedYear')") == "all"
+    assert selected_tab(page) == "2026" and "すべて" not in tab_texts(page)  # いちばん新しい年
+    assert page.evaluate("localStorage.getItem('pv:selectedYear')") is None  # 保存値は消す
     assert abs(scroll_y(page) - 500) <= 2  # 基準写真が消えていれば保存位置付近へ
-    page.add_init_script("sessionStorage.setItem('pv:scroll', '{broken');")
+    page.add_init_script(
+        "localStorage.setItem('pv:selectedYear', '2019');"
+        "sessionStorage.setItem('pv:scroll', '{broken');"
+    )
     page.reload()
     page.wait_for_selector("html[data-pv=ready]")
+    assert selected_tab(page) == "2026" and "2019" not in tab_texts(page)
+    assert page.evaluate("localStorage.getItem('pv:selectedYear')") is None
     assert scroll_y(page) == 0
     w.assert_clean()
 
@@ -618,7 +635,7 @@ def test_works_without_storage(pw, site):
         page.evaluate("window.scrollTo(0, 300)")
         page.wait_for_timeout(400)
         page.click(".tile[data-index='0']")
-        assert counter(page) == "1 / 30"
+        assert counter(page) == "1 / 6"
         w.assert_clean()
     finally:
         ctx.close()
@@ -630,14 +647,15 @@ def test_works_without_storage(pw, site):
 def test_empty_gallery(phone, site):
     page, w = open_page(phone, site["empty"], state="empty")
     assert page.inner_text("#status-text") == "写真はまだありません。"
-    assert tab_texts(page) == ["すべて"] and page.locator(".tile").count() == 0
+    assert tab_texts(page) == [] and page.locator(".tile").count() == 0
+    assert page.inner_text("#photo-count") == "" and page.inner_text("#app-title") == "写真"
     assert page.is_hidden("#status-retry")
     w.assert_clean()
 
 
 def test_single_photo(phone, site):
     page, w = open_page(phone, site["single"])
-    assert tab_texts(page) == ["すべて", "2025"] and page.locator(".tile").count() == 1
+    assert tab_texts(page) == ["2025"] and selected_tab(page) == "2025" and page.locator(".tile").count() == 1
     page.click(".tile")
     assert counter(page) == "1 / 1"
     assert page.is_disabled("#viewer-prev") and page.is_disabled("#viewer-next")
@@ -710,6 +728,7 @@ def test_loading_state_is_shown(phone, site):
     assert page.inner_text("#status-text") == "読み込み中…"
     assert page.get_attribute("#status", "aria-busy") == "true" and page.get_attribute("#grid", "aria-busy") == "true"
     assert page.is_visible("#status .spinner")
+    assert page.inner_text("#app-title") == ""  # 読込前に仮のサイト名（写真）を出さない
     held[0].continue_()
     page.wait_for_selector("html[data-pv=ready]")
     assert page.is_hidden("#status") and page.get_attribute("#grid", "aria-busy") == "false"
@@ -731,7 +750,7 @@ def test_broken_images_are_shown_and_do_not_block(phone, site):
     assert page.inner_text("#viewer-error") == "画像を読み込めませんでした"
     page.click("#viewer-next")
     page.wait_for_function("document.getElementById('viewer-img').naturalWidth > 0")
-    assert page.is_hidden("#viewer-error") and counter(page) == "2 / 79"
+    assert page.is_hidden("#viewer-error") and counter(page) == "2 / 72"
     assert w.page_errors == []
 
 
@@ -743,20 +762,20 @@ def test_accessibility_basics(desktop, site):
     assert page.get_attribute("html", "lang") == "ja"
     assert page.locator("[role=tablist]").count() == 1
     tabs = page.locator("[role=tab]")
-    assert tabs.count() == 5
+    assert tabs.count() == 4
     assert page.locator("[role=tab][aria-selected=true]").count() == 1
     assert page.locator("[role=tab][tabindex='0']").count() == 1
     assert page.eval_on_selector_all("[role=tab]", "els => els.every(e => e.getAttribute('aria-controls') === 'grid-panel')")
-    assert page.get_attribute("#grid-panel", "aria-labelledby") == "tab-all"
-    assert page.get_attribute("#tab-2025", "aria-label") == "2025年（40枚）"
-    # キーボードでタブ切替
-    page.focus("#tab-all")
+    assert page.get_attribute("#grid-panel", "aria-labelledby") == "tab-2026"
+    assert page.get_attribute("#tab-2025", "aria-label") == "2025年（12枚）"
+    # キーボードでタブ切替（索引を移動している間は画面を動かさない）
+    page.focus("#tab-2026")
     page.keyboard.press("ArrowRight")
-    assert page.evaluate("document.activeElement.id") == "tab-2026" and selected_tab(page) == "2026"
+    assert page.evaluate("document.activeElement.id") == "tab-2025" and selected_tab(page) == "2025"
     page.keyboard.press("End")
     assert selected_tab(page) == "2023"
     page.keyboard.press("Home")
-    assert selected_tab(page) == "すべて"
+    assert selected_tab(page) == "2026" and scroll_y(page) == 0
     # 写真ボタンの名前（alt）
     assert page.eval_on_selector_all(".tile img", "els => els.every(e => e.alt.trim().length > 0)")
     assert page.get_by_role("button", name=re.compile("撮影の写真")).count() == 60
@@ -834,8 +853,8 @@ def test_scenario_add_photos_publish_and_reload(pw, tmp_path):
         ctx = browser.new_context(**p.devices["iPhone 13"])
         try:
             page, w = open_page(ctx, f"{base}/photo-viewer/")
-            assert page.locator(".tile").count() == 2
-            page.click("#tab-2025")
+            assert selected_tab(page) == "2025" and page.locator(".tile").count() == 1  # いちばん新しい年
+            page.click("#tab-2024")
             assert page.locator(".tile").count() == 1
             # 写真を追加して再生成・公開準備
             make_image(s / "2026" / "c.jpg", (800, 600), exif_dt="2026:01:01 00:00:00", label="C")
@@ -843,15 +862,15 @@ def test_scenario_add_photos_publish_and_reload(pw, tmp_path):
             prepare()
             page.reload()
             page.wait_for_selector("html[data-pv=ready]")
-            assert selected_tab(page) == "2025" and page.locator(".tile").count() == 2  # 年選択を保持
-            assert tab_texts(page) == ["すべて", "2026", "2025", "2024"]
-            page.click("#tab-all")
+            assert selected_tab(page) == "2024" and page.locator(".tile").count() == 1  # 年選択を保持
+            assert tab_texts(page) == ["2026", "2025", "2024"]
+            page.click("#tab-2025")
             doc = load_photos(project)
-            assert tile_ids(page) == [x["id"] for x in doc["photos"]]
+            assert tile_ids(page) == [x["id"] for x in doc["photos"] if x["year"] == 2025]
             assert [x["date"][:10] for x in doc["photos"]] == ["2026-01-01", "2025-12-31", "2025-05-01", "2024-05-01"]
             page.click(".tile[data-index='0']")
             page.wait_for_function("document.getElementById('viewer-img').naturalWidth > 0")
-            assert counter(page) == "1 / 4"
+            assert counter(page) == "1 / 2"
             w.assert_clean()
         finally:
             ctx.close()
@@ -866,7 +885,7 @@ def test_landscape_and_rotation(pw, site):
     try:
         page, w = open_page(ctx, site["main"])
         vw = page.evaluate("document.documentElement.clientWidth")
-        boxes = page.eval_on_selector_all("#grid > li:not(.is-hero) .tile", "els => els.slice(0, 4).map(e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width]; })")
+        boxes = page.eval_on_selector_all("#grid > li .tile", "els => els.slice(0, 4).map(e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width]; })")
         assert boxes[0][1] == boxes[1][1] == boxes[2][1] < boxes[3][1]  # 横向き（広い画面）では3列
         assert boxes[1][0] - (boxes[0][0] + boxes[0][2]) >= 8
         assert boxes[0][0] >= 0 and boxes[2][0] + boxes[2][2] <= vw + 0.6
@@ -883,12 +902,12 @@ def test_landscape_and_rotation(pw, site):
         assert image_fits()
         page.set_viewport_size({"width": 390, "height": 664})  # 縦向きへ回転
         page.wait_for_timeout(300)
-        assert viewer_open(page) and counter(page) == "2 / 79" and image_fits()
+        assert viewer_open(page) and counter(page) == "2 / 72" and image_fits()
         page.set_viewport_size({"width": 844, "height": 340})  # 再び横向きへ
         page.wait_for_timeout(300)
         assert image_fits()
         page.click("#viewer-close")
-        sel = "#grid > li:not(.is-hero) .tile"
+        sel = "#grid > li .tile"
         tops = page.eval_on_selector_all(sel, "els => els.slice(0, 4).map(e => e.getBoundingClientRect().top)")
         assert tops[0] == tops[1] == tops[2] < tops[3]  # 横向きでは3列
         page.set_viewport_size({"width": 390, "height": 664})
@@ -955,7 +974,7 @@ def test_slow_mobile_network_shows_loading_then_photos(pw, site):
         assert page.locator(".tile").count() == 60
         page.click(".tile[data-index='0']")
         page.wait_for_function("document.getElementById('viewer-img').naturalWidth > 0", timeout=60000)
-        assert counter(page) == "1 / 79"
+        assert counter(page) == "1 / 72"
         w.assert_clean()
     finally:
         ctx.close()
@@ -964,20 +983,59 @@ def test_slow_mobile_network_shows_loading_then_photos(pw, site):
 # ===========================================================================
 # 見出しは流れ、年の行だけが残る／全画面表示の操作は写真に重ならない
 # ===========================================================================
-def test_only_year_row_stays_on_scroll(phone, site):
+def test_only_top_bar_stays_on_scroll(phone, site):
+    """上部のバー（名前と小さな年リンク）だけが残り、大きな年の索引と表紙はスクロールで流れる。"""
     page, w = open_page(phone, site["main"])
-    head0 = page.locator(".site-head").bounding_box()
-    assert head0["y"] >= 0 and page.is_visible("#app-title")
-    page.evaluate("window.scrollTo(0, 900)")
+    assert page.is_visible("#app-title") and page.is_visible(".year-index")
+    page.evaluate("window.scrollTo(0, 1400)")
     page.wait_for_timeout(200)
-    bar = page.evaluate("document.querySelector('.tabs-bar').getBoundingClientRect().top")
-    head = page.evaluate("document.querySelector('.site-head').getBoundingClientRect().bottom")
-    assert abs(bar) < 1  # 年の行は上端に残る
-    assert head <= 0  # 見出しは流れて画面外へ
-    assert page.evaluate("getComputedStyle(document.querySelector('.tabs-bar')).borderBottomWidth") == "0px"
-    # 年の行の高さは 60px 以下（写真の表示領域を広く保つ）
-    assert page.evaluate("document.querySelector('.tabs-bar').getBoundingClientRect().height") <= 60
+    bar = page.evaluate("document.querySelector('.site-bar').getBoundingClientRect().top")
+    index_bottom = page.evaluate("document.querySelector('.year-index').getBoundingClientRect().bottom")
+    assert abs(bar) < 1 and index_bottom <= 0
+    assert page.evaluate("getComputedStyle(document.querySelector('.site-bar')).borderBottomWidth") == "0px"
+    assert page.evaluate("document.querySelector('.site-bar').getBoundingClientRect().height") <= 64  # 写真の表示領域を広く保つ
     w.assert_clean()
+
+
+def test_top_bar_year_links_switch_year(phone, site):
+    page, w = open_page(phone, site["main"])
+    links = page.eval_on_selector_all(".bar-year", "els => els.map(e => e.textContent)")
+    assert links == ["2026", "2025", "2024", "2023"]
+    assert page.get_attribute(".bar-year[data-year='2026']", "aria-current") == "true"
+    page.evaluate("window.scrollTo(0, 1400)")
+    page.wait_for_timeout(200)
+    page.click(".bar-year[data-year='2025']")  # スクロールした先からでも年を切り替えられる
+    assert selected_tab(page) == "2025"
+    assert page.get_attribute(".bar-year[data-year='2025']", "aria-current") == "true"
+    assert page.get_attribute(".bar-year[data-year='2026']", "aria-current") is None
+    expected = [p["id"] for p in site["doc"]["photos"] if p["year"] == 2025]
+    assert tile_ids(page) == expected
+    assert anchor_id(page) == expected[0]  # その年の先頭が上部バーのすぐ下に
+    assert page.is_visible("#cover")  # 表紙は上へ戻れば見える
+    page.click(".bar-year[data-year='2026']")
+    assert selected_tab(page) == "2026" and tile_ids(page)[0] == site["ids"][0]
+    w.assert_clean()
+
+
+def test_year_index_layout(pw, site):
+    """年の索引: スマホは2列、PCは3列で中央にそろえる（参考: ポートフォリオのカテゴリー一覧）。"""
+    p, browser = pw
+    for device, cols in (("iPhone 13", 2), ("desktop", 3)):
+        ctx = browser.new_context(**p.devices["iPhone 13"]) if device != "desktop" else browser.new_context(viewport={"width": 1440, "height": 900})
+        try:
+            page, w = open_page(ctx, site["main"])
+            boxes = page.eval_on_selector_all(".year-tab", "els => els.map(e => { const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top)]; })")
+            first_row = [b for b in boxes if b[1] == boxes[0][1]]
+            assert len(first_row) == cols, (device, boxes)
+            assert boxes[cols][0] == boxes[0][0]  # 次の行は同じ左端から
+            if device == "desktop":
+                left_gap = page.evaluate("document.querySelector('.year-tab').getBoundingClientRect().left")
+                assert left_gap > 80  # 左右に余白をとって中央寄せ
+            size = page.evaluate("parseFloat(getComputedStyle(document.querySelector('.year-tab')).fontSize)")
+            assert size >= 24  # 大きな文字
+            w.assert_clean()
+        finally:
+            ctx.close()
 
 
 def test_viewer_controls_do_not_cover_photo(phone, site):
@@ -994,4 +1052,69 @@ def test_viewer_controls_do_not_cover_photo(phone, site):
     )
     assert r["prev"] is False and r["next"] is False and r["close"] is False and r["navBelow"]
     assert r["bg"] == "rgb(255, 255, 255)"  # 明るい壁（ライトモード）
+    w.assert_clean()
+
+
+
+# ===========================================================================
+# 仕様 v6・v7: トップ（表紙）の写真を選べる。どの年でも表示
+# ===========================================================================
+def _with_cover(page, cover):
+    def handler(route):
+        resp = route.fetch()
+        doc = resp.json()
+        doc["cover"] = cover
+        route.fulfill(response=resp, json=doc)
+
+    page.route("**/data/photos.json", handler)
+
+
+def test_chosen_cover_is_shown_and_opens_within_its_year(phone, site):
+    chosen = site["doc"]["photos"][75]  # 2025年の4枚目（最初に開く2026年とは別の年）
+    assert chosen["year"] == 2025
+    page = phone.new_page()
+    w = Watch(page)
+    _with_cover(page, chosen["id"])
+    page.goto(site["main"])
+    page.wait_for_selector("html[data-pv=ready]")
+    assert page.get_attribute("#cover-img", "data-id") == chosen["id"]
+    assert page.get_attribute("#cover-img", "src") == chosen["src"]
+    # 表紙は一覧の写真の数に含めない（一覧は従来どおり新しい順）
+    assert tile_ids(page)[:3] == site["ids"][:3]
+    page.click("#cover-btn")
+    assert viewer_open(page) and counter(page) == "4 / 12"  # 表紙の写真の年（2025年）の中の位置で開く
+    assert page.get_attribute("#viewer-img", "data-id") == chosen["id"]
+    page.click("#viewer-next")
+    assert page.get_attribute("#viewer-img", "data-id") == site["ids"][76]
+    page.keyboard.press("Escape")
+    assert page.evaluate("document.activeElement.id") == "cover-btn"  # 表紙へフォーカスが戻る
+    assert selected_tab(page) == "2026"  # 表紙を見ても選択中の年は変わらない
+    # どの年を選んでも同じ表紙
+    for tab in ("#tab-2024", "#tab-2023", "#tab-2026"):
+        page.click(tab)
+        assert page.is_visible("#cover") and page.get_attribute("#cover-img", "data-id") == chosen["id"]
+    w.assert_clean()
+
+
+@pytest.mark.parametrize("bad", ["deadbeefdeadbeef", None, 123])
+def test_unknown_cover_falls_back_to_newest(phone, site, bad):
+    page = phone.new_page()
+    w = Watch(page)
+    _with_cover(page, bad)
+    page.goto(site["main"])
+    page.wait_for_selector("html[data-pv=ready]")
+    assert page.get_attribute("#cover-img", "data-id") == site["ids"][0]
+    w.assert_clean()
+
+
+def test_cover_hidden_when_no_photos(phone, site):
+    page, w = open_page(phone, site["empty"], state="empty")
+    assert page.is_hidden("#cover")
+    w.assert_clean()
+
+
+def test_cover_button_has_its_own_name(phone, site):
+    page, w = open_page(phone, site["main"])
+    assert page.get_attribute("#cover-btn", "aria-label") == "表紙の写真を全画面で見る"
+    assert page.get_by_role("button", name=re.compile("撮影の写真")).count() == 60  # 一覧の写真だけ
     w.assert_clean()

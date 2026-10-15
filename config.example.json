@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy-Item config.example.json config.json でコピーして使います。config.json は Git の対象外です（PC内のパスを公開しないため）。thumbSize と detailMaxEdge は仕様固定値（480 / 1920）で、変更すると生成・検証がエラーになります。",
+  "_comment": "Copy-Item config.example.json config.json でコピーして使います。config.json は Git の対象外です（PC内のパスを公開しないため）。thumbSize と detailMaxEdge は仕様固定値（480 / 1920）で、変更すると生成・検証がエラーになります。 coverPhoto にトップに大きく表示する写真のファイル名（source_photos からの位置。例: \"2026/IMG_0001.jpeg\"）を書くと表紙になります。空ならいちばん新しい写真。",
   "sourceDir": "source_photos",
   "allowedExtensions": [
     ".jpg",
@@ -10,6 +10,7 @@
     ".heif"
   ],
   "siteTitle": "Photographs",
+  "coverPhoto": "",
   "thumbSize": 480,
   "detailMaxEdge": 1920,
   "thumbQuality": 80,

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""公開出力一式の動的整合性検証（同期仕様ID PV-SPEC-2026-10-v5 / 版 5.0）
+"""公開出力一式の動的整合性検証（同期仕様ID PV-SPEC-2026-10-v7 / 版 7.0）
 
 検証内容:
   JSON構文（UTF-8・BOMなし）/ 同期仕様ID / 必須キーと型 / 旧fiscalYearの混入 /
   date（ISO 8601・+09:00）と year の一致（1月1日始まり）/ 並び順（新しい順・同日時は相対パス昇順）/
   ID・パスの重複 / src・thumb のPOSIX相対パスと実在 / 画像の実読込 /
   サムネイル 480×480 / 詳細画像の最大辺 1920 以下と width・height の一致 /
-  公開画像のメタデータ（EXIF・XMP・ICC）なし / 参照されていない公開画像（孤立ファイル）なし /
+  公開画像のメタデータ（EXIF・XMP・ICC）なし / 参照されていない公開画像（孤立ファイル）なし / 表紙の写真が一覧にあること /
   サイトファイルの存在・外部URL依存なし・ルート相対パスなし /
   設定ファイル（thumbSize=480・detailMaxEdge=1920 の仕様固定値、値の型）
 
@@ -310,6 +310,14 @@ def validate(
                 res.error(f"同日時の並びが相対パス昇順ではありません: photos[{i1}] と photos[{i2}]（S-02）")
 
     # --- years / count -----------------------------------------------------------
+    if "cover" in data:
+        cover = data["cover"]
+        ids = {p.get("id") for p in photos if isinstance(p, dict)}
+        if cover is None:
+            if photos:
+                res.warn("表紙の写真（cover）が未設定です。画面ではいちばん新しい写真を表紙にします")
+        elif not isinstance(cover, str) or cover not in ids:
+            res.error(f"表紙の写真（cover）が一覧にない写真を指しています: {cover!r}")
     expected_years = sorted({p["year"] for _, p, _ in valid}, reverse=True)
     if "years" in data and data["years"] != expected_years:
         res.error(f"years が写真の年と一致しません: {data['years']} / 期待値 {expected_years}")

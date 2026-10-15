@@ -1,4 +1,4 @@
-"""写真ビューア 共通定義（同期仕様ID PV-SPEC-2026-10-v5 / 版 5.0）
+"""写真ビューア 共通定義（同期仕様ID PV-SPEC-2026-10-v7 / 版 7.0）
 
 build_gallery.py と validate_build.py が共有する定数・日時処理・排他ロック。
 """
@@ -10,8 +10,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-SPEC_ID = "PV-SPEC-2026-10-v5"
-SPEC_VERSION = "5.0"
+SPEC_ID = "PV-SPEC-2026-10-v7"
+SPEC_VERSION = "7.0"
 SCHEMA_VERSION = 3
 
 # S-03 / S-04（仕様で固定。設定ファイルからは変更できない）
@@ -38,6 +38,7 @@ DEFAULT_CONFIG = {
     "sourceDir": "source_photos",
     "allowedExtensions": list(DEFAULT_ALLOWED_EXTENSIONS),
     "siteTitle": "写真",
+    "coverPhoto": "",
     "thumbSize": THUMB_SIZE,
     "detailMaxEdge": DETAIL_MAX_SIDE,
     "thumbQuality": 80,
@@ -83,7 +84,7 @@ _FILENAME_DT_COMPACT = re.compile(r"(?<!\d)(\d{4})(\d{2})(\d{2})[_-](\d{2})(\d{2
 def parse_filename_datetime(name: str) -> datetime | None:
     """ファイル名に含まれる撮影日時（秒まで）を Asia/Tokyo の現地時刻として読む。
 
-    仕様 PV-SPEC-2026-10-v5: EXIF DateTimeOriginal がない場合に使う（EXIF → ファイル名 → 更新日時）。
+    仕様 PV-SPEC-2026-10-v4 以降: EXIF DateTimeOriginal がない場合に使う（EXIF → ファイル名 → 更新日時）。
     ファイル名の中で最初に現れる日時だけを使う（Amazon Photos が重複時に付ける
     「 (2026-10-12T16_03_05.577)」のようなダウンロード日時の後置きは使わない）。
     実在しない日時・1900〜2100年以外は無視する。日付だけ（時刻なし）のファイル名は使わない。
@@ -178,6 +179,8 @@ def load_config(root: Path, config_path: Path | None = None) -> tuple:
         raise ConfigError("shrinkGuardRatio は 0〜1 の数値である必要があります")
     if not isinstance(cfg["sourceDir"], str) or not cfg["sourceDir"].strip():
         raise ConfigError("sourceDir が空です")
+    if not isinstance(cfg["coverPhoto"], str):
+        raise ConfigError("coverPhoto は原本フォルダー内の写真のファイル名（文字列）を指定してください（空なら最新の写真）")
     if not isinstance(cfg["siteTitle"], str):
         raise ConfigError("siteTitle は文字列である必要があります")
     if not isinstance(cfg["jobs"], int) or isinstance(cfg["jobs"], bool) or cfg["jobs"] < 0:
