@@ -312,7 +312,7 @@ def test_cover_title_meta_and_catalogue_numbers(phone, site):
     w.assert_clean()
 
 
-def test_latin_title_uses_bundled_font(pw, site):
+def test_title_uses_bundled_handwriting_font(pw, site):
     p, browser = pw
     ctx = browser.new_context(**p.devices["iPhone 13"])
     try:
@@ -330,8 +330,12 @@ def test_latin_title_uses_bundled_font(pw, site):
         page.wait_for_selector("html[data-pv=ready]")
         assert page.inner_text("#app-title") == "Daily"
         assert not page.evaluate("document.getElementById('app-title').classList.contains('is-ja')")
-        assert page.evaluate("document.fonts.check('200 64px \"Albert Sans\"')")
-        assert any(u == site["main"] + "fonts/albert-sans-latin-wght-normal.woff2" for u in w.requests)
+        page.evaluate("document.fonts.ready")
+        assert page.evaluate("document.fonts.check('16px \"Klee One\"', 'Daily 2026年の16枚')")
+        assert page.evaluate("[...document.fonts].some(f => f.family.replace(/\"/g, '') === 'Klee One' && f.status === 'loaded')")
+        assert any(u == site["main"] + "fonts/klee-one-subset.woff2" for u in w.requests)
+        fams = page.evaluate("['#app-title', '#tab-2026', '#photo-count', '.tile-date'].map(s => getComputedStyle(document.querySelector(s)).fontFamily)")
+        assert all(f.startswith('"Klee One"') for f in fams), fams
         assert page.title() == "Daily"
         lines = page.evaluate("Math.round(document.getElementById('app-title').getBoundingClientRect().height / parseFloat(getComputedStyle(document.getElementById('app-title')).lineHeight))")
         assert lines == 1  # 画面幅いっぱいでも1行に収まる
@@ -1051,8 +1055,43 @@ def test_viewer_controls_do_not_cover_photo(phone, site):
                     bg: getComputedStyle(document.getElementById('viewer')).backgroundColor }; })()"""
     )
     assert r["prev"] is False and r["next"] is False and r["close"] is False and r["navBelow"]
-    assert r["bg"] == "rgb(255, 255, 255)"  # 明るい壁（ライトモード）
+    assert r["bg"] == "rgb(244, 239, 228)"  # 生成り色の壁
     w.assert_clean()
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_always_cream_background_and_black_text(pw, site, scheme):
+    """スマホがダークモードでも、生成り色の背景に黒い文字。選んでいる年は色ではなく下線で示す。"""
+    p, browser = pw
+    ctx = browser.new_context(**p.devices["iPhone 13"], color_scheme=scheme)
+    try:
+        page, w = open_page(ctx, site["main"])
+        colors = page.evaluate(
+            """(() => { const c = s => getComputedStyle(document.querySelector(s)).color;
+               return { body: getComputedStyle(document.body).backgroundColor,
+                        bar: getComputedStyle(document.querySelector('.site-bar')).backgroundColor,
+                        text: ['#app-title', '#tab-2026', '#tab-2025', '.bar-year[data-year="2024"]', '#photo-count',
+                               '#photo-range', '.tile-no', '.tile-date'].map(c) }; })()"""
+        )
+        assert colors["body"] == "rgb(244, 239, 228)"
+        assert colors["bar"].startswith("rgba(244, 239, 228") or colors["bar"] == "rgb(244, 239, 228)"
+        assert page.get_attribute("meta[name=theme-color]", "content") == "#f4efe4"
+        assert set(colors["text"]) == {"rgb(0, 0, 0)"}, colors["text"]
+        deco = lambda s: page.evaluate("s => getComputedStyle(document.querySelector(s)).textDecorationLine", s)
+        assert deco("#tab-2026") == "underline" and deco("#tab-2025") == "none"
+        assert deco(".bar-year[data-year='2026']") == "underline" and deco(".bar-year[data-year='2025']") == "none"
+        page.click("#tab-2025")
+        assert deco("#tab-2025") == "underline" and deco("#tab-2026") == "none"
+        page.click(".tile[data-index='0']")
+        page.wait_for_function("document.getElementById('viewer-img').naturalWidth > 0")
+        v = page.evaluate(
+            """(() => ({ bg: getComputedStyle(document.getElementById('viewer')).backgroundColor,
+                         text: ['#viewer-no', '#viewer-counter', '#viewer-caption'].map(s => getComputedStyle(document.querySelector(s)).color) }))()"""
+        )
+        assert v["bg"] == "rgb(244, 239, 228)" and set(v["text"]) == {"rgb(0, 0, 0)"}
+        w.assert_clean()
+    finally:
+        ctx.close()
 
 
 

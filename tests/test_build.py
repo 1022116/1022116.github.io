@@ -9,6 +9,7 @@ import io
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1035,18 +1036,46 @@ class TestFilenameDate:
 
 
 # ===========================================================================
-# 仕様 v5: ポートフォリオ型一覧で使う同梱フォント
+# 同梱フォント（手書き風の Klee One。画面に出る文字だけを取り出したもの）
 # ===========================================================================
+FONT = PROJECT_ROOT / "fonts" / "klee-one-subset.woff2"
+
+
+def _ui_texts() -> str:
+    """画面に出る文言（app.js の文字列と index.html の本文）。コメントは含めない。"""
+    js = (PROJECT_ROOT / "js" / "app.js").read_text(encoding="utf-8")
+    html = re.sub(r"<!--.*?-->", "", (PROJECT_ROOT / "index.html").read_text(encoding="utf-8"), flags=re.S)
+    lits = re.findall(r"'((?:[^'\\\n]|\\.)*)'", js) + re.findall(r">([^<]+)<", html)
+    return "".join(lits)
+
+
 class TestBundledFont:
     def test_font_and_license_are_bundled(self):
-        font = PROJECT_ROOT / "fonts" / "albert-sans-latin-wght-normal.woff2"
-        assert font.is_file() and font.read_bytes()[:4] == b"wOF2"
-        assert "SIL Open Font License" in (PROJECT_ROOT / "fonts" / "OFL.txt").read_text(encoding="utf-8")
+        assert FONT.is_file() and FONT.read_bytes()[:4] == b"wOF2"
+        assert FONT.stat().st_size < 200_000  # 必要な文字だけなので軽い（スマホ回線でもすぐ読める）
+        lic = (PROJECT_ROOT / "fonts" / "OFL.txt").read_text(encoding="utf-8")
+        assert "SIL Open Font License" in lic and "Klee Project Authors" in lic
+
+    def test_css_and_html_point_to_the_font(self):
+        css = (PROJECT_ROOT / "css" / "style.css").read_text(encoding="utf-8")
+        html = (PROJECT_ROOT / "index.html").read_text(encoding="utf-8")
+        assert 'url("../fonts/klee-one-subset.woff2")' in css and 'font-family: "Klee One"' in css
+        assert 'href="fonts/klee-one-subset.woff2"' in html
+
+    def test_font_covers_every_character_on_screen(self):
+        """画面の文言・日付・かな・英数字がすべてフォントに入っている（欠けると一部だけ別の書体になる）。"""
+        ttlib = pytest.importorskip("fontTools.ttLib", reason="fontTools 未導入（フォントの文字確認をスキップ）")
+        pytest.importorskip("brotli", reason="brotli 未導入（WOFF2 を読めないためスキップ）")
+        cmap = ttlib.TTFont(FONT).getBestCmap()
+        need = set(_ui_texts()) | {chr(c) for c in range(0x20, 0x7F)} | set("年月日枚–…")
+        need |= {chr(c) for c in range(0x3041, 0x3097)} | {chr(c) for c in range(0x30A1, 0x30FB)}
+        missing = sorted(c for c in need if c.isprintable() and ord(c) not in cmap)
+        assert missing == [], f"フォントに入っていない文字: {''.join(missing)}"
 
     def test_validator_detects_missing_css_asset(self, project):
         build_ok(project)
         assert V.validate(project).ok
-        (project / "fonts" / "albert-sans-latin-wght-normal.woff2").unlink()
+        (project / "fonts" / "klee-one-subset.woff2").unlink()
         errors = V.validate(project).errors
         assert any("CSS が参照するファイルがありません" in e for e in errors), errors
 

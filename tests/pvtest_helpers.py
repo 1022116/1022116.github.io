@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TOOLS = PROJECT_ROOT / "tools"
-SITE_FILES = ("index.html", "css/style.css", "js/app.js", ".nojekyll", "config.example.json", "requirements.txt", ".gitignore", ".gitattributes", "pytest.ini", "fonts/albert-sans-latin-wght-normal.woff2", "fonts/OFL.txt")
+SITE_FILES = ("index.html", "css/style.css", "js/app.js", ".nojekyll", "config.example.json", "requirements.txt", ".gitignore", ".gitattributes", "pytest.ini", "fonts/klee-one-subset.woff2", "fonts/OFL.txt")
 
 
 def make_project(dest: Path) -> Path:
