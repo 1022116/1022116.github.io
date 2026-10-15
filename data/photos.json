@@ -1,13 +1,14 @@
 {
-  "specId": "PV-SPEC-2026-10-v5",
-  "specVersion": "5.0",
+  "specId": "PV-SPEC-2026-10-v7",
+  "specVersion": "7.0",
   "schemaVersion": 3,
-  "title": "Photographs",
+  "title": "Daily",
   "timezone": "Asia/Tokyo",
   "count": 16,
   "years": [
     2026
   ],
+  "cover": "2fabc6bbe8e3f058",
   "photos": [
     {
       "id": "2fabc6bbe8e3f058",

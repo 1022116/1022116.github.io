@@ -1,14 +1,16 @@
 /*
- * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v5 / 版 5.0）
+ * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v7 / 版 7.0）
  * HTML / CSS / Vanilla JavaScript のみ。外部CDN・ライブラリなし。URLはすべて相対（GitHub Pages のサブパスで動作）。
  *
  * ■ 状態保存と再読込の仕様
+ *   - 年タブ … 写真のある年だけを新しい順に並べる（v7 で「すべて」を廃止）。初めて開いたときはいちばん新しい年。
  *   - 選択中の年タブ … localStorage「pv:selectedYear」に保存。再読込・再訪問で復元する。
- *       保存した年がデータに存在しなくなった場合は「すべて」に戻し、保存値も「all」に置き換える。
+ *       保存した年がデータに存在しない場合（旧版の「all」を含む）はいちばん新しい年を表示し、保存値は消す。
  *   - スクロール位置 … sessionStorage「pv:scroll」に保存（表示中の年について1つだけ）。
  *       同じタブでの再読込・戻る操作では復元し、新しいタブ・別の日の再訪問では先頭から表示する。
  *       位置は「画面上端の写真ID＋ずれ(px)」で保存するため、画面幅や写真の追加で多少変わっても同じ写真付近へ戻る。
- *       年タブを切り替えたときは、その年の先頭から表示する（保存位置も新しい年の先頭で上書き）。
+ *       年タブを切り替えたときは、その年の一覧の先頭（表紙の下）を上部バーのすぐ下に表示する
+ *       （保存位置も新しい年の先頭で上書き）。矢印キーで索引を移動しているときは画面を動かさない。
  *   - 全画面表示中の写真 … 保存しない。再読込すると一覧（保存した年・位置）に戻る。
  *   - 写真データ … data/photos.json を毎回再検証付き（cache: no-cache）で取得する。
  *   - 保存はスクロール停止後 200ms のタイマーと、ページを離れる時（pagehide / 非表示化）に行う。
@@ -26,7 +28,7 @@
     swipeRatio: 0.18,
     swipeVelocity: 0.45,
     spinnerDelay: 150,
-    heroMaxHeight: 'min(78vh, 900px)', // css/style.css の .is-hero と同じ値
+    coverMaxHeight: 'min(64vh, 820px)', // css/style.css の .cover-btn と同じ値
     fontWait: 1500
   });
   var KEYS = Object.freeze({ year: 'pv:selectedYear', scroll: 'pv:scroll' });
@@ -37,10 +39,15 @@
   function $(id) { return document.getElementById(id); }
 
   var el = {
-    header: document.querySelector('.app-header'), // スクロール中も上に残る年の行
+    header: document.querySelector('.app-header'), // スクロール中も上に残るバー（名前と年）
     title: $('app-title'),
     count: $('photo-count'),
     range: $('photo-range'),
+    cover: $('cover'),
+    coverBtn: $('cover-btn'),
+    coverImg: $('cover-img'),
+    meta: document.querySelector('.site-meta'), // 一覧の先頭（枚数の行）
+    barYears: $('bar-years'),
     tabs: $('year-tabs'),
     status: $('status'),
     statusText: $('status-text'),
@@ -64,8 +71,11 @@
   var state = {
     photos: [],
     years: [],
-    year: 'all',
+    year: null,       // 表示中の年（写真が0件のときは null）
     list: [],
+    viewList: [],     // 全画面表示で前後に送る写真（一覧から開いたら一覧、表紙から開いたら表紙の写真の年）
+    viewFrom: 'grid', // 'grid' | 'cover'（閉じたときにフォーカスを戻す先）
+    coverId: null,
     rendered: 0,
     invalid: 0,
     ready: false,
@@ -168,7 +178,8 @@
     photos.sort(function (a, b) { return (b.ms - a.ms) || (a.order - b.order); });
     // 目録番号: いちばん古い写真が 1。年で絞り込んでも番号は変わらない
     for (var k = 0; k < photos.length; k++) photos[k].no = photos.length - k;
-    return { photos: photos, title: title, invalid: invalid };
+    var cover = (data && typeof data === 'object' && !Array.isArray(data) && typeof data.cover === 'string') ? data.cover : null;
+    return { photos: photos, title: title, invalid: invalid, cover: cover };
   }
 
   function errorMessage(err) {
@@ -225,8 +236,11 @@
     state.rendered = 0;
     el.grid.textContent = '';
     el.tabs.textContent = '';
+    el.barYears.textContent = '';
     el.count.textContent = '';
     el.range.textContent = '';
+    if (!el.title.textContent) el.title.textContent = '写真';
+    el.cover.hidden = true;
     el.sentinel.hidden = true;
     setStatus('error', errorMessage(err));
     document.documentElement.setAttribute('data-pv', 'error');
@@ -235,6 +249,10 @@
   function applyData(parsed) {
     state.photos = parsed.photos;
     state.invalid = parsed.invalid;
+    // 表紙: photos.json の cover（config.json の coverPhoto）。見つからなければいちばん新しい写真
+    state.coverId = parsed.photos.some(function (p) { return p.id === parsed.cover; })
+      ? parsed.cover
+      : (parsed.photos[0] ? parsed.photos[0].id : null);
     if (parsed.invalid && window.console) console.warn('[photo-viewer] 表示できないデータ: ' + parsed.invalid + '件');
     el.title.textContent = parsed.title;
     el.title.classList.toggle('is-ja', /[\u3000-\u9fff\uff00-\uffef]/.test(parsed.title));
@@ -245,12 +263,13 @@
     years.sort(function (a, b) { return b - a; });
     state.years = years;
 
+    // 初めて開いたときはいちばん新しい年。保存した年がなくなっていれば（旧版の「all」も）保存値を消す
     var stored = storageGet('localStorage', KEYS.year);
-    var year = 'all';
-    if (stored && stored !== 'all') {
-      var n = Number(stored);
+    var year = years.length ? years[0] : null;
+    if (stored !== null) {
+      var n = /^\d{4}$/.test(stored) ? Number(stored) : NaN;
       if (years.indexOf(n) >= 0) year = n;
-      else storageSet('localStorage', KEYS.year, 'all'); // 削除された年は復活させない
+      else storageRemove('localStorage', KEYS.year); // 削除された年は復活させない
     }
     state.year = year;
 
@@ -282,18 +301,15 @@
   }
 
   // ---------------------------------------------------------------- 年タブ（S-06）
-  function tabLabel(value) { return value === 'all' ? 'すべて' : String(value); }
-  function countFor(value) {
-    if (value === 'all') return state.photos.length;
+  function countFor(year) {
     var n = 0;
-    for (var i = 0; i < state.photos.length; i++) if (state.photos[i].year === value) n++;
+    for (var i = 0; i < state.photos.length; i++) if (state.photos[i].year === year) n++;
     return n;
   }
 
   function renderTabs() {
     el.tabs.textContent = '';
-    var values = ['all'].concat(state.years);
-    values.forEach(function (v) {
+    state.years.forEach(function (v) {
       var b = document.createElement('button');
       b.type = 'button';
       b.className = 'year-tab';
@@ -301,10 +317,21 @@
       b.setAttribute('role', 'tab');
       b.setAttribute('aria-controls', 'grid-panel');
       b.setAttribute('data-year', String(v));
-      b.setAttribute('aria-label', (v === 'all' ? 'すべて' : v + '年') + '（' + countFor(v) + '枚）');
+      b.setAttribute('aria-label', v + '年（' + countFor(v) + '枚）');
       b.setAttribute('data-count', String(countFor(v)));
-      b.textContent = tabLabel(v);
+      b.textContent = String(v);
       el.tabs.appendChild(b);
+    });
+    // 上部バーの小さな年リンク（スクロールしても年を切り替えられるように。索引と同じ動作）
+    el.barYears.textContent = '';
+    state.years.forEach(function (v) {
+      var a = document.createElement('button');
+      a.type = 'button';
+      a.className = 'bar-year';
+      a.setAttribute('data-year', String(v));
+      a.setAttribute('aria-label', v + '年を表示');
+      a.textContent = String(v);
+      el.barYears.appendChild(a);
     });
     syncTabs();
   }
@@ -318,6 +345,10 @@
       b.tabIndex = on ? 0 : -1;
       if (on) active = b;
     });
+    Array.prototype.forEach.call(el.barYears.children, function (a) {
+      if (a.getAttribute('data-year') === current) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
+    });
     if (active) {
       el.panel.setAttribute('aria-labelledby', active.id);
       var left = active.offsetLeft;
@@ -327,9 +358,16 @@
     }
   }
 
-  function selectYear(value) {
-    var year = value === 'all' ? 'all' : Number(value);
-    if (year !== 'all' && state.years.indexOf(year) < 0) return;
+  // 一覧の先頭（枚数の行）が上部バーのすぐ下に来るスクロール位置
+  function listTop() {
+    var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+    var bar = el.header ? el.header.getBoundingClientRect().height : 0;
+    return Math.max(0, Math.round(y + el.meta.getBoundingClientRect().top - bar));
+  }
+
+  function selectYear(value, opts) {
+    var year = Number(value);
+    if (state.years.indexOf(year) < 0) return;
     cancelPendingSave();
     closeViewer({ restoreFocus: false });
     var changed = year !== state.year;
@@ -337,13 +375,18 @@
     storageSet('localStorage', KEYS.year, String(year));
     syncTabs();
     if (changed) renderGrid();
-    window.scrollTo(0, 0);
+    // 選んだ年の写真がすぐ見えるよう、表紙の下の一覧の先頭へ（矢印キーで索引を移動中は動かさない）
+    if (!(opts && opts.keepScroll)) window.scrollTo(0, listTop());
     saveScrollNow();
   }
 
   el.tabs.addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('.year-tab') : null;
     if (b) selectYear(b.getAttribute('data-year'));
+  });
+  el.barYears.addEventListener('click', function (e) {
+    var a = e.target.closest ? e.target.closest('.bar-year') : null;
+    if (a) selectYear(a.getAttribute('data-year'));
   });
 
   el.tabs.addEventListener('keydown', function (e) {
@@ -358,13 +401,13 @@
     if (j === null) return;
     e.preventDefault();
     tabs[j].focus();
-    selectYear(tabs[j].getAttribute('data-year'));
+    selectYear(tabs[j].getAttribute('data-year'), { keepScroll: true });
   });
 
   // ---------------------------------------------------------------- ポートフォリオ型一覧（S-05）
   function updateCount() {
     var n = state.list.length + '枚';
-    var text = state.photos.length ? (state.year === 'all' ? n : state.year + '年の' + n) : '';
+    var text = state.photos.length ? state.year + '年の' + n : '';
     var ys = state.years;
     el.range.textContent = !ys.length ? '' : (ys.length === 1 ? String(ys[0]) : ys[ys.length - 1] + '–' + ys[0]);
     if (state.invalid) text += '（表示できないデータ ' + state.invalid + '件）';
@@ -372,9 +415,7 @@
   }
 
   function makeTile(p, i) {
-    var hero = i === 0;
     var li = document.createElement('li');
-    if (hero) li.className = 'is-hero';
     var b = document.createElement('button');
     b.type = 'button';
     b.className = 'tile';
@@ -383,20 +424,11 @@
     var img = document.createElement('img');
     img.loading = 'lazy'; // src より先に設定（遅延読込を確実に効かせる）
     img.decoding = 'async';
-    if (hero) {
-      // 読み込み前から元の縦横比の場所を確保する（読み込み後に一覧がずれてスクロール位置が狂わないように）
-      var rw = p.width || 4, rh = p.height || 3;
-      b.style.aspectRatio = rw + ' / ' + rh;
-      b.style.width = 'min(100%, calc(' + CONFIG.heroMaxHeight + ' * ' + (rw / rh).toFixed(4) + '))';
-      img.width = rw;
-      img.height = rh;
-    } else {
-      img.width = 480;
-      img.height = 480;
-    }
+    img.width = 480;
+    img.height = 480;
     img.alt = p.alt;
     img.addEventListener('error', function () { b.classList.add('is-broken'); });
-    img.src = hero ? p.src : p.thumb;
+    img.src = p.thumb;
     var fb = document.createElement('span');
     fb.className = 'tile-fallback';
     fb.setAttribute('aria-hidden', 'true');
@@ -419,6 +451,40 @@
     return li;
   }
 
+  // 表紙（年の索引の下に、どの年を選んでいても同じ1枚を大きく表示する）
+  function coverPhoto() {
+    for (var i = 0; i < state.photos.length; i++) if (state.photos[i].id === state.coverId) return state.photos[i];
+    return null;
+  }
+
+  function renderCover() {
+    var p = coverPhoto();
+    var show = !!p;
+    el.cover.hidden = !show;
+    if (!show) return;
+    if (el.coverImg.getAttribute('data-id') === p.id) return; // 同じ写真なら読み込み直さない
+    var rw = p.width || 4, rh = p.height || 3;
+    // 読み込み前から元の縦横比の場所を確保する（読み込み後に一覧がずれてスクロール位置が狂わないように）
+    el.coverBtn.style.aspectRatio = rw + ' / ' + rh;
+    el.coverBtn.style.width = 'min(100%, calc(' + CONFIG.coverMaxHeight + ' * ' + (rw / rh).toFixed(4) + '))';
+    el.coverBtn.classList.remove('is-broken');
+    el.coverImg.width = rw;
+    el.coverImg.height = rh;
+    el.coverImg.alt = p.alt;
+    el.coverImg.setAttribute('data-id', p.id);
+    el.coverImg.src = p.src;
+  }
+
+  el.coverImg.addEventListener('error', function () { el.coverBtn.classList.add('is-broken'); });
+  // 表紙をタップすると、表紙の写真の年の中のその位置から全画面表示（前後はその年の写真）
+  el.coverBtn.addEventListener('click', function () {
+    var p = coverPhoto();
+    if (!p) return;
+    var list = state.photos.filter(function (q) { return q.year === p.year; });
+    var i = list.indexOf(p);
+    if (i >= 0) openViewer(i, { list: list, from: 'cover' });
+  });
+
   function renderMore(n) {
     var end = Math.min(state.list.length, state.rendered + n);
     if (end <= state.rendered) return;
@@ -434,12 +500,11 @@
   }
 
   function renderGrid() {
-    state.list = state.year === 'all'
-      ? state.photos.slice()
-      : state.photos.filter(function (p) { return p.year === state.year; });
+    state.list = state.photos.filter(function (p) { return p.year === state.year; });
     el.grid.textContent = '';
     state.rendered = 0;
     renderMore(CONFIG.batchSize);
+    renderCover();
     updateCount();
     observeSentinel();
   }
@@ -550,9 +615,12 @@
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 
   // ---------------------------------------------------------------- 全画面スライド（S-07）
-  function openViewer(index) {
-    if (!state.list.length) return;
-    index = clamp(index | 0, 0, state.list.length - 1);
+  function openViewer(index, opts) {
+    var list = (opts && opts.list) || state.list;
+    if (!list.length) return;
+    index = clamp(index | 0, 0, list.length - 1);
+    state.viewList = list;
+    state.viewFrom = (opts && opts.from) || 'grid';
     cancelSwipe();
     cancelPendingSave();
     if (!state.open) {
@@ -593,7 +661,10 @@
     el.spinner.hidden = true;
     el.error.hidden = true;
     state.preload = [];
-    if (!opts || opts.restoreFocus !== false) focusTile(state.index);
+    if (!opts || opts.restoreFocus !== false) {
+      if (state.viewFrom === 'cover' && !el.cover.hidden) el.coverBtn.focus({ preventScroll: true });
+      else focusTile(state.index);
+    }
   }
 
   function focusTile(index) {
@@ -618,10 +689,10 @@
   }
 
   function showSlide() {
-    var p = state.list[state.index];
+    var p = state.viewList[state.index];
     if (!p) return;
     var token = ++state.slideToken;
-    var n = state.list.length;
+    var n = state.viewList.length;
     el.stage.classList.add('is-loading');
     el.stage.classList.remove('is-error');
     el.error.hidden = true;
@@ -659,7 +730,7 @@
     state.preload = [state.index - 1, state.index + 1].filter(function (i) { return i >= 0 && i < n; }).map(function (i) {
       var im = new Image();
       im.decoding = 'async';
-      im.src = state.list[i].src;
+      im.src = state.viewList[i].src;
       return im;
     });
   }
@@ -667,7 +738,7 @@
   function go(delta) {
     if (!state.open) return false;
     var n = state.index + delta;
-    if (n < 0 || n >= state.list.length) return false;
+    if (n < 0 || n >= state.viewList.length) return false;
     state.index = n;
     showSlide();
     return true;
@@ -690,7 +761,7 @@
     if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
     else if (e.key === 'Home') { e.preventDefault(); go(-state.index); }
-    else if (e.key === 'End') { e.preventDefault(); go(state.list.length - 1 - state.index); }
+    else if (e.key === 'End') { e.preventDefault(); go(state.viewList.length - 1 - state.index); }
     else if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); closeViewer(); }
     else if (e.key === 'Tab') {
       // フォーカスを全画面表示の中で循環させる（ブラウザーのUIへ抜けないようにする）
@@ -734,7 +805,7 @@
     if (s.axis !== 'x') return;
     e.preventDefault();
     s.dx = dx;
-    var atEdge = (dx > 0 && state.index === 0) || (dx < 0 && state.index === state.list.length - 1);
+    var atEdge = (dx > 0 && state.index === 0) || (dx < 0 && state.index === state.viewList.length - 1);
     el.img.style.transform = 'translate3d(' + (atEdge ? dx / 3 : dx) + 'px,0,0)';
   });
 

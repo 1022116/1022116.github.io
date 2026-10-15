@@ -1,9 +1,11 @@
-/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v5 / 版 5.0）
-   S-05: ポートフォリオ型一覧（先頭の1枚を大きく、以降は正方形をスマホ2列・PC3列、番号と撮影日を添える）
+/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v7 / 版 7.0）
+   S-05: ポートフォリオ型一覧（正方形をスマホ2列・幅640px以上で3列、番号と撮影日を添える）
+         表紙の写真（config.json の coverPhoto、未指定は最新）を年の索引の下に中央へ大きく（どの年でも同じ1枚）
+   S-06: 写真のある年だけを新しい順に（v7 で「すべて」を廃止）。上部バーの小さなリンクと、大きな索引（スマホ2列・PC3列）の両方から選べる
    S-07: 全画面スライド／reduced-motion 対応
 
    デザイン: 「作品目録」— 写真を作品として扱い、一枚ずつに目録番号（古い順の通し番号）を振る。
-   ・サイト名は細いウェイトの欧文で画面幅いっぱいに置く（ここだけを大きく、他は小さく静かに）
+   ・名前は上部バーに小さく、年は大きな文字の索引として並べる（参考: ポートフォリオサイトのカテゴリー一覧）
    ・情報は小さな文字で左右に振り分け、線や箱で区切らず余白で区切る
    ・全画面表示は白い壁に一枚を掛けるように見せ、操作は写真の下にまとめる
    欧文フォント: Albert Sans（SIL Open Font License 1.1、fonts/OFL.txt）。外部配信は使わず同梱。 */
@@ -86,50 +88,8 @@ button {
 }
 .skip-link:focus { top: 8px; }
 
-/* ---- 表紙（サイト名を大きく） ------------------------------------------------ */
-.site-head {
-  max-width: var(--maxw);
-  margin: 0 auto;
-  padding:
-    max(56px, calc(env(safe-area-inset-top) + 40px))
-    max(var(--side), env(safe-area-inset-right))
-    24px
-    max(var(--side), env(safe-area-inset-left));
-}
-
-.app-title {
-  margin: 0 0 0 -0.04em; /* 大きな文字の左の余白を本文の左端にそろえる */
-  font-family: var(--latin);
-  font-size: clamp(48px, 16.6vw, 228px);
-  font-weight: 200;
-  line-height: 0.92;
-  letter-spacing: -0.035em;
-  overflow-wrap: anywhere;
-}
-.app-title.is-ja {
-  margin-left: 0;
-  font-family: var(--ja);
-  font-size: clamp(40px, 12vw, 160px);
-  font-weight: 300;
-  letter-spacing: 0.06em;
-}
-
-.site-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 16px;
-  margin: 30px 0 0; /* p・g の下に伸びる部分と重ならない間隔 */
-  min-height: 1.6em;
-  color: var(--muted);
-  font-size: 13px;
-  letter-spacing: 0.02em;
-}
-
-.app-count { color: var(--ink); }
-
-/* ---- 年の行（スクロール中も上に残る。区切り線なし） ----------------------------- */
-.tabs-bar {
+/* ---- 上部のバー（小さな名前と年。スクロールしても上に残る） ------------------------ */
+.site-bar {
   position: sticky;
   top: 0;
   z-index: 10;
@@ -139,51 +99,117 @@ button {
   padding-top: env(safe-area-inset-top);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .tabs-bar { background: var(--bg); }
+  .site-bar { background: var(--bg); }
 }
 
-.year-tabs {
+.bar-inner {
   display: flex;
-  gap: 2px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   max-width: var(--maxw);
+  min-height: 56px;
   margin: 0 auto;
-  padding: 2px max(calc(var(--side) - 10px), env(safe-area-inset-right)) 4px max(calc(var(--side) - 10px), env(safe-area-inset-left));
+  padding: 6px max(var(--side), env(safe-area-inset-right)) 6px max(var(--side), env(safe-area-inset-left));
+}
+
+.app-title {
+  flex: 0 0 auto;
+  margin: 0;
+  font-family: var(--latin);
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.app-title.is-ja {
+  font-family: var(--ja);
+  font-size: 19px;
+  letter-spacing: 0.06em;
+}
+
+.bar-years {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
   overflow-x: auto;
-  overscroll-behavior-x: contain;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
-.year-tabs::-webkit-scrollbar { display: none; }
+.bar-years::-webkit-scrollbar { display: none; }
 
-.year-tab {
+.bar-year {
   flex: 0 0 auto;
-  min-width: 44px;
+  min-width: 36px;
   min-height: 44px;
-  padding: 8px 10px;
+  padding: 4px 6px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   background: none;
   color: var(--muted);
-  font-size: 15px;
-  font-weight: 400;
-  letter-spacing: 0.01em;
+  font-size: 12px;
+  letter-spacing: 0.06em;
   cursor: pointer;
   transition: color 0.2s ease;
 }
-/* 年ごとの枚数を右肩に小さく（読み上げは aria-label で「2025年（9枚）」） */
-.year-tab::after {
-  content: attr(data-count);
-  margin-left: 3px;
-  font-size: 10px;
-  vertical-align: super;
-  line-height: 0;
+.bar-year:hover,
+.bar-year[aria-current="true"] { color: var(--ink); }
+.bar-year:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+/* ---- 年の索引（参考サイトのカテゴリー一覧の位置。大きな文字で並べる） --------------- */
+.year-index {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 14px max(var(--side), env(safe-area-inset-right)) 8px max(var(--side), env(safe-area-inset-left));
 }
-.year-tab:hover { color: var(--ink); }
-.year-tab[aria-selected="true"] { color: var(--ink); font-weight: 600; }
+
+.year-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 16px;
+  margin: 0;
+  padding: 0;
+}
+
+.year-tab {
+  justify-self: start;
+  min-height: 44px;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: clamp(24px, calc(10px + 3vw), 54px);
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0.005em;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+.year-tab:hover,
+.year-tab[aria-selected="true"] { color: var(--ink); }
 .year-tab:focus-visible {
   outline: 2px solid var(--focus);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
+
+/* 枚数とその年の範囲（索引と写真のあいだに小さく） */
+.site-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  max-width: var(--maxw);
+  min-height: 1.6em;
+  margin: 0 auto;
+  padding: 12px max(var(--side), env(safe-area-inset-right)) 0 max(var(--side), env(safe-area-inset-left));
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.app-count { color: var(--ink); }
 
 /* ---- 状態表示（読込中・0件・エラー） --------------------------------------- */
 .status {
@@ -224,6 +250,44 @@ button {
 .spinner[hidden] { display: none; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- 表紙の写真（config.json の coverPhoto。どの年でも索引の下に、中央に1枚） ------- */
+.cover {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 28px max(12vw, env(safe-area-inset-right)) 28px max(12vw, env(safe-area-inset-left));
+}
+.cover[hidden] { display: none; }
+
+/* 縦横比と幅は app.js が元の写真の大きさから指定する（高さは最大 min(64vh, 820px)） */
+.cover-btn {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 4 / 3;
+  margin: 0 auto;
+  padding: 0;
+  border: 0;
+  background: var(--tile);
+  overflow: hidden;
+  cursor: zoom-in;
+}
+.cover-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 0.25s ease;
+}
+.cover-btn.is-broken .cover-img { visibility: hidden; }
+@media (hover: hover) {
+  .cover-btn:hover .cover-img { opacity: 0.92; }
+}
+.cover-btn:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 
 /* ---- ポートフォリオ型一覧（S-05） -------------------------------------------- */
 .grid-panel {
@@ -285,15 +349,6 @@ button {
   outline-offset: 3px;
 }
 
-/* 先頭の1枚（その一覧でいちばん新しい写真）は元の縦横比で大きく */
-.grid > li.is-hero { grid-column: 1 / -1; }
-/* 縦横比と幅は app.js が元の写真の大きさから指定する（高さは最大 min(78vh, 900px)） */
-.is-hero .tile { max-width: 100%; }
-@supports not (aspect-ratio: 1 / 1) {
-  .is-hero .tile { height: auto; padding-top: 0; }
-  .is-hero .tile img { position: static; height: auto; }
-}
-
 /* 番号と撮影日 */
 .tile-cap {
   display: flex;
@@ -308,8 +363,6 @@ button {
 }
 .tile-no { color: var(--ink); }
 .tile-date { color: var(--muted); white-space: nowrap; }
-.is-hero .tile-cap { margin-top: 12px; font-size: 13px; }
-.is-hero .tile-no { font-size: 15px; }
 
 .tile-fallback {
   position: absolute;
@@ -474,8 +527,19 @@ button {
 
 @media (min-width: 760px) {
   :root { --side: 32px; --col-gap: 20px; --row-gap: 40px; }
-  .site-head { padding-top: 72px; padding-bottom: 32px; }
-  .site-meta { margin-top: 44px; font-size: 14px; }
+  .bar-inner { min-height: 72px; }
+  .app-title { font-size: 26px; }
+  .bar-year { font-size: 13px; padding: 4px 8px; }
+  /* 年の索引は3列で中央に（参考サイトのカテゴリー一覧と同じ並び） */
+  .year-index { padding-top: 28px; padding-bottom: 16px; }
+  .year-tabs {
+    grid-template-columns: repeat(3, minmax(0, 300px));
+    justify-content: center;
+    column-gap: clamp(32px, 6vw, 96px);
+    row-gap: 8px;
+  }
+  .cover { padding: 48px var(--side); }
+  .site-meta { font-size: 13px; }
   .grid-panel { padding-top: 28px; padding-bottom: 120px; }
   .viewer-bar { padding: 18px 20px 0 32px; }
   .viewer-no { font-size: 26px; }

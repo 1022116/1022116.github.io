@@ -8,7 +8,7 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
-  <meta name="pv-spec" content="PV-SPEC-2026-10-v5 5.0">
+  <meta name="pv-spec" content="PV-SPEC-2026-10-v7 7.0">
   <title>写真</title>
   <link rel="preload" href="fonts/albert-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
@@ -17,19 +17,27 @@
 <body>
   <a class="skip-link" href="#grid-panel">写真一覧へ移動</a>
 
-  <header class="site-head">
-    <h1 class="app-title" id="app-title">写真</h1>
-    <p class="site-meta">
-      <span class="site-range" id="photo-range"></span>
-      <span class="app-count" id="photo-count"></span>
-    </p>
+  <header class="app-header site-bar">
+    <div class="bar-inner">
+      <h1 class="app-title" id="app-title"></h1><!-- サイト名は photos.json の title（config.json の siteTitle）。読込前に仮の名前を出さない -->
+      <nav class="bar-years" id="bar-years" aria-label="年の切り替え（上部）"></nav>
+    </div>
   </header>
 
-  <nav class="app-header tabs-bar" aria-label="年で絞り込み">
+  <nav class="year-index" aria-label="年で絞り込み">
     <div class="year-tabs" id="year-tabs" role="tablist" aria-label="表示する年"></div>
   </nav>
 
   <main class="app-main" id="main">
+    <figure class="cover" id="cover" hidden>
+      <button type="button" class="cover-btn" id="cover-btn" aria-label="表紙の写真を全画面で見る">
+        <img class="cover-img" id="cover-img" alt="" decoding="async">
+      </button>
+    </figure>
+    <p class="site-meta">
+      <span class="app-count" id="photo-count"></span>
+      <span class="site-range" id="photo-range"></span>
+    </p>
     <div class="status" id="status" role="status" aria-live="polite" data-state="loading">
       <span class="spinner" aria-hidden="true"></span>
       <p class="status-text" id="status-text">読み込み中…</p>
