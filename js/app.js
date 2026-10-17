@@ -1,5 +1,5 @@
 /*
- * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v7 / 版 7.0）
+ * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v8 / 版 8.0）
  * HTML / CSS / Vanilla JavaScript のみ。外部CDN・ライブラリなし。URLはすべて相対（GitHub Pages のサブパスで動作）。
  *
  * ■ 状態保存と再読込の仕様
@@ -16,6 +16,14 @@
  *   - 保存はスクロール停止後 200ms のタイマーと、ページを離れる時（pagehide / 非表示化）に行う。
  *       年タブ切替時は保留中のタイマーを取り消し、古い年の位置が新しい年として保存される競合を防ぐ。
  *   - プライベートブラウズ等でストレージを使えない場合は保存せずに動作する。
+ *
+ * ■ 演出（v8）
+ *   - 現像 … 一覧と表紙の写真は「読み込み済み」かつ「画面に入った」ときに is-developed を付け、
+ *       白くぼやけた像から色と輪郭が浮かぶように表示する（css/style.css）。視差効果を減らす設定では動かさない。
+ *   - タイトル … サイト名が index.html の書き順データ（template#title-art）と同じとき、書き順どおりに描く。
+ *       タブを開いて最初の1回だけ再生し、再読込・戻る操作では描き終わった状態で表示する。
+ *   - 小話 … photos.json の story を全画面表示の写真の下に表示し、一覧には鉛筆の印を付ける。
+ *       手書き風の全文字版フォント（css/klee-one.css）は表示の後から読み込む。
  */
 (function () {
   'use strict';
@@ -31,7 +39,8 @@
     coverMaxHeight: 'min(64vh, 820px)', // css/style.css の .cover-btn と同じ値
     fontWait: 1500
   });
-  var KEYS = Object.freeze({ year: 'pv:selectedYear', scroll: 'pv:scroll' });
+  var KEYS = Object.freeze({ year: 'pv:selectedYear', scroll: 'pv:scroll', titleDrawn: 'pv:titleDrawn' });
+  var STORY_MAX = 1000; // 小話の最大文字数（tools/pv_common.py の STORY_MAX_CHARS と同じ）
   var PATH_RE = /^(photos|thumbs)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.webp$/;
   var ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
   var JST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -65,7 +74,9 @@
     error: $('viewer-error'),
     prev: $('viewer-prev'),
     next: $('viewer-next'),
-    caption: $('viewer-caption')
+    caption: $('viewer-caption'),
+    story: $('viewer-story'),
+    titleArt: $('title-art')
   };
 
   var state = {
@@ -89,7 +100,8 @@
     swipe: null,
     saveTimer: 0,
     restoring: false,
-    observer: null
+    observer: null,
+    developObserver: null
   };
 
   // ---------------------------------------------------------------- ユーティリティ
@@ -171,6 +183,7 @@
         height: posInt(e.height),
         alt: (typeof e.alt === 'string' && e.alt.trim()) ? e.alt : formatDateTime(ms) + ' の写真',
         dateSource: e.dateSource,
+        story: (typeof e.story === 'string') ? e.story.trim().slice(0, STORY_MAX) : '',
         order: i
       });
     });
@@ -254,8 +267,7 @@
       ? parsed.cover
       : (parsed.photos[0] ? parsed.photos[0].id : null);
     if (parsed.invalid && window.console) console.warn('[photo-viewer] 表示できないデータ: ' + parsed.invalid + '件');
-    el.title.textContent = parsed.title;
-    el.title.classList.toggle('is-ja', /[\u3000-\u9fff\uff00-\uffef]/.test(parsed.title));
+    renderTitle(parsed.title);
     document.title = parsed.title;
 
     var years = [];
@@ -286,6 +298,52 @@
       if (token !== state.loadToken) return;
       restoreScroll();
       document.documentElement.setAttribute('data-pv', state.photos.length ? 'ready' : 'empty');
+      loadFullFont();
+    });
+  }
+
+  // 手書き風フォントの全文字版（文字の範囲ごとのファイル）。小話などに出てくる漢字に使う。
+  // 画面の文言は最初に読み込む小さなフォントで足りるため、表示が終わってから読み込む。
+  function loadFullFont() {
+    if (document.getElementById('pv-font-full')) return;
+    var link = document.createElement('link');
+    link.id = 'pv-font-full';
+    link.rel = 'stylesheet';
+    link.href = 'css/klee-one.css';
+    document.head.appendChild(link);
+  }
+
+  // ---------------------------------------------------------------- タイトル（書き順で描く）
+  function prefersReducedMotion() {
+    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+
+  function renderTitle(title) {
+    var art = el.titleArt;
+    var useArt = !!(art && art.content && art.getAttribute('data-title') === title);
+    el.title.textContent = '';
+    el.title.classList.toggle('is-ja', /[\u3000-\u9fff\uff00-\uffef]/.test(title));
+    el.title.classList.toggle('has-art', useArt);
+    if (!useArt) {
+      el.title.textContent = title;
+      return;
+    }
+    // 読み上げ用の文字と、見た目の書き文字（SVG）
+    var label = document.createElement('span');
+    label.className = 'visually-hidden';
+    label.textContent = title;
+    el.title.appendChild(label);
+    var svg = art.content.firstElementChild.cloneNode(true);
+    el.title.appendChild(svg);
+    var drawn = storageGet('sessionStorage', KEYS.titleDrawn) === '1';
+    if (drawn || prefersReducedMotion()) {
+      svg.classList.add('is-drawn'); // 描き終わった状態で表示
+      return;
+    }
+    storageSet('sessionStorage', KEYS.titleDrawn, '1');
+    // 次の描画で書き始める（最初の状態を確実に描いてから線を伸ばす）
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { svg.classList.add('is-drawing'); });
     });
   }
 
@@ -426,9 +484,11 @@
     img.decoding = 'async';
     img.width = 480;
     img.height = 480;
-    img.alt = p.alt;
-    img.addEventListener('error', function () { b.classList.add('is-broken'); });
+    img.alt = p.story ? p.alt + '（小話あり）' : p.alt;
+    img.addEventListener('load', function () { markLoaded(b); });
+    img.addEventListener('error', function () { b.classList.add('is-broken'); markLoaded(b); });
     img.src = p.thumb;
+    watchDevelop(b);
     var fb = document.createElement('span');
     fb.className = 'tile-fallback';
     fb.setAttribute('aria-hidden', 'true');
@@ -445,10 +505,52 @@
     date.className = 'tile-date';
     date.textContent = formatDot(p.ms);
     cap.appendChild(no);
+    if (p.story) cap.appendChild(storyMark());
     cap.appendChild(date);
     li.appendChild(b);
     li.appendChild(cap);
     return li;
+  }
+
+  // 小話のある写真に付ける小さな鉛筆の印（読み上げは写真の代替テキストの「小話あり」で行う）
+  function storyMark() {
+    var s = document.createElement('span');
+    s.className = 'tile-story';
+    s.setAttribute('aria-hidden', 'true');
+    s.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" focusable="false"><path d="M3 13l1-3.2L10.6 3.2a1.4 1.4 0 0 1 2 0l.2.2a1.4 1.4 0 0 1 0 2L6.2 12 3 13z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+    return s;
+  }
+
+  // ---------------------------------------------------------------- 現像（読み込み済みで、画面に入った写真から）
+  function tryDevelop(target) {
+    if (target.getAttribute('data-loaded') === '1' && target.getAttribute('data-seen') === '1') {
+      target.classList.add('is-developed');
+    }
+  }
+  function markLoaded(target) {
+    target.setAttribute('data-loaded', '1');
+    tryDevelop(target);
+  }
+  function watchDevelop(target) {
+    if (!('IntersectionObserver' in window)) {
+      target.setAttribute('data-seen', '1');
+      return;
+    }
+    if (!state.developObserver) {
+      state.developObserver = new IntersectionObserver(function (entries) {
+        var k = 0;
+        entries.forEach(function (en) {
+          if (!en.isIntersecting) return;
+          var t = en.target;
+          state.developObserver.unobserve(t);
+          // 同時に画面に入った写真は少しずつずらして現像する（最大 0.4 秒）
+          t.style.setProperty('--develop-delay', Math.min(k++ * 80, 400) + 'ms');
+          t.setAttribute('data-seen', '1');
+          tryDevelop(t);
+        });
+      }, { threshold: 0.15 });
+    }
+    state.developObserver.observe(target);
   }
 
   // 表紙（年の索引の下に、どの年を選んでいても同じ1枚を大きく表示する）
@@ -467,7 +569,10 @@
     // 読み込み前から元の縦横比の場所を確保する（読み込み後に一覧がずれてスクロール位置が狂わないように）
     el.coverBtn.style.aspectRatio = rw + ' / ' + rh;
     el.coverBtn.style.width = 'min(100%, calc(' + CONFIG.coverMaxHeight + ' * ' + (rw / rh).toFixed(4) + '))';
-    el.coverBtn.classList.remove('is-broken');
+    el.coverBtn.classList.remove('is-broken', 'is-developed');
+    el.coverBtn.removeAttribute('data-loaded');
+    el.coverBtn.removeAttribute('data-seen');
+    watchDevelop(el.coverBtn);
     el.coverImg.width = rw;
     el.coverImg.height = rh;
     el.coverImg.alt = p.alt;
@@ -475,7 +580,8 @@
     el.coverImg.src = p.src;
   }
 
-  el.coverImg.addEventListener('error', function () { el.coverBtn.classList.add('is-broken'); });
+  el.coverImg.addEventListener('load', function () { markLoaded(el.coverBtn); });
+  el.coverImg.addEventListener('error', function () { el.coverBtn.classList.add('is-broken'); markLoaded(el.coverBtn); });
   // 表紙をタップすると、表紙の写真の年の中のその位置から全画面表示（前後はその年の写真）
   el.coverBtn.addEventListener('click', function () {
     var p = coverPhoto();
@@ -501,6 +607,11 @@
 
   function renderGrid() {
     state.list = state.photos.filter(function (p) { return p.year === state.year; });
+    if (state.developObserver) {
+      Array.prototype.forEach.call(el.grid.querySelectorAll('.tile:not(.is-developed)'), function (b) {
+        state.developObserver.unobserve(b);
+      });
+    }
     el.grid.textContent = '';
     state.rendered = 0;
     renderMore(CONFIG.batchSize);
@@ -719,6 +830,9 @@
     el.counter.textContent = (state.index + 1) + ' / ' + n;
     el.no.textContent = 'No. ' + formatNo(p.no);
     el.caption.textContent = formatDateTime(p.ms) + (p.dateSource === 'mtime' ? '（ファイル更新日時）' : '');
+    el.story.textContent = p.story;
+    el.story.hidden = !p.story;
+    el.story.scrollTop = 0;
     var focused = document.activeElement;
     el.prev.disabled = state.index === 0;
     el.next.disabled = state.index === n - 1;

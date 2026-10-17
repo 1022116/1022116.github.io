@@ -1,4 +1,4 @@
-/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v7 / 版 7.0）
+/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v8 / 版 8.0）
    S-05: ポートフォリオ型一覧（正方形をスマホ2列・幅640px以上で3列、番号と撮影日を添える）
          表紙の写真（config.json の coverPhoto、未指定は最新）を年の索引の下に中央へ大きく（どの年でも同じ1枚）
    S-06: 写真のある年だけを新しい順に（v7 で「すべて」を廃止）。上部バーの小さなリンクと、大きな索引（スマホ2列・PC3列）の両方から選べる
@@ -9,15 +9,18 @@
    ・情報は小さな文字で左右に振り分け、線や箱で区切らず余白で区切る
    ・生成り色の紙に黒い手書き文字で書き添えるように見せる
    ・全画面表示は生成りの壁に一枚を掛けるように見せ、操作は写真の下にまとめる
-   フォント: Klee One（手書き風。SIL Open Font License 1.1、fonts/OFL.txt）。画面に出る文字（英数字・かな・画面の文言の漢字）
-   だけを取り出して同梱し、外部配信は使わない。含まれない文字は端末の日本語書体で表示される。 */
+   ・写真は画面に入ると、印画紙に像が浮かぶように「現像」されて現れる
+   フォント: Klee One（手書き風。SIL Open Font License 1.1、fonts/OFL.txt）。外部配信は使わず同梱。
+     - "Klee One UI": 画面の文言（英数字・かな・画面で使う漢字）だけを取り出した小さなファイル。最初に読み込む
+     - "Klee One":    文字の範囲ごとに分けた全文字版（css/klee-one.css）。app.js が後から読み込み、小話などの漢字に使う */
 
 @font-face {
-  font-family: "Klee One";
+  font-family: "Klee One UI";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
   src: url("../fonts/klee-one-subset.woff2") format("woff2");
+  unicode-range: U+20-7E,U+B7,U+D7,U+2013-2014,U+2018-2019,U+201C-201D,U+2022,U+2026,U+2039-203A,U+3000-3002,U+3005,U+3007,U+300C-300F,U+301C,U+3041-3096,U+309B-309F,U+30A1-30FE,U+4E00,U+4E0A,U+4E2D,U+4EF6,U+4FE1,U+505C,U+50CF,U+5168,U+518D,U+5199,U+5207,U+524D,U+52B9,U+52D5,U+5C0F,U+5E74,U+5F0F,U+5F62,U+614B,U+6210,U+65B0,U+65E5,U+65E7,U+6642,U+66F4,U+66FF,U+6708-6709,U+6790,U+679A,U+6B21,U+6B62-6B63,U+72B6,U+7406,U+751F,U+753B,U+771F,U+78BA,U+793A,U+79FB,U+7BA1,U+7D19,U+7D5E,U+8005,U+8868,U+898B,U+89A7,U+89E3,U+8A71,U+8A8D,U+8AAD,U+8FBC,U+901A,U+90E8,U+9589,U+9762,U+FF01-FF5E;
 }
 
 /* 色: いつも生成り色の背景に黒い文字（スマホのダークモードでも切り替えない）。
@@ -33,8 +36,8 @@
   --col-gap: 12px;
   --row-gap: 28px;
   --maxw: 1280px;
-  --latin: "Klee One", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
-  --ja: "Klee One", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif;
+  --latin: "Klee One UI", "Klee One", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
+  --ja: "Klee One UI", "Klee One", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif;
   color-scheme: light;
 }
 
@@ -54,7 +57,7 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
-  /* 手書き風の Klee One（英数字・かな・画面の文言）。含まれない文字は端末の日本語書体 */
+  /* 手書き風の Klee One。画面の文言は小さな UI 版、それ以外の文字は全文字版、どちらもなければ端末の日本語書体 */
   font-family: var(--ja);
   font-synthesis: none; /* 太字・斜体を機械的に作らない（手書きの線が崩れるため） */
   font-size: 15px;
@@ -116,6 +119,44 @@ button {
   letter-spacing: 0;
   white-space: nowrap;
 }
+/* サイト名を書き順で描く（index.html の template#title-art。app.js が is-drawing / is-drawn を付ける） */
+.app-title.has-art { display: flex; align-items: center; }
+.title-art {
+  display: block;
+  height: 0.9em;
+  width: auto;
+  overflow: visible;
+  color: var(--ink);
+}
+.title-art .stroke {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 120;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: var(--len) var(--len);
+  stroke-dashoffset: var(--len);
+}
+.title-art .ink-full { fill: currentColor; opacity: 0; }
+.title-art.is-drawing .stroke { animation: pv-write var(--dur) cubic-bezier(0.42, 0, 0.38, 1) var(--delay) forwards; }
+.title-art.is-drawing .ink-full { animation: pv-ink 0.3s ease var(--delay) forwards; }
+.title-art.is-drawn .stroke { stroke-dashoffset: 0; }
+.title-art.is-drawn .ink-full { opacity: 1; }
+@keyframes pv-write { to { stroke-dashoffset: 0; } }
+@keyframes pv-ink { to { opacity: 1; } }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .app-title.is-ja {
   font-family: var(--ja);
   font-size: 19px;
@@ -286,12 +327,8 @@ button {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: opacity 0.25s ease;
 }
 .cover-btn.is-broken .cover-img { visibility: hidden; }
-@media (hover: hover) {
-  .cover-btn:hover .cover-img { opacity: 0.92; }
-}
 .cover-btn:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 
 /* ---- ポートフォリオ型一覧（S-05） -------------------------------------------- */
@@ -342,11 +379,26 @@ button {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: opacity 0.25s ease;
 }
 
+/* ---- 現像: 写真が画面に入ると、白くぼやけた像から色と輪郭が浮かび上がる ------------------
+   app.js が「読み込み済み」かつ「画面に入った」写真に is-developed を付ける。
+   視差効果を減らす設定では、下の reduced-motion の指定で動かさずに表示する */
+.tile img,
+.cover-img {
+  opacity: 0;
+  filter: blur(7px) sepia(0.55) brightness(1.18) contrast(0.82);
+  transition: opacity 1s ease-out, filter 1.8s cubic-bezier(0.2, 0.6, 0.3, 1);
+  transition-delay: var(--develop-delay, 0ms);
+}
+.tile.is-developed img,
+.cover-btn.is-developed .cover-img {
+  opacity: 1;
+  filter: none;
+}
 @media (hover: hover) {
-  .tile:hover img { opacity: 0.88; }
+  .tile.is-developed:hover img { opacity: 0.88; transition-duration: 0.25s; transition-delay: 0s; }
+  .cover-btn.is-developed:hover .cover-img { opacity: 0.92; transition-duration: 0.25s; transition-delay: 0s; }
 }
 
 .tile:focus-visible {
@@ -367,6 +419,15 @@ button {
   letter-spacing: 0.02em;
 }
 .tile-no { color: var(--ink); }
+/* 小話のある写真の印（番号の右に小さな鉛筆） */
+.tile-story {
+  display: inline-flex;
+  align-items: center;
+  margin-right: auto;
+  margin-left: -2px;
+  color: var(--ink);
+}
+.tile-story svg { display: block; }
 .tile-date { white-space: nowrap; }
 
 .tile-fallback {
@@ -510,6 +571,24 @@ button {
 }
 .viewer-nav:disabled { visibility: hidden; }
 
+.viewer-text { min-width: 0; text-align: center; }
+/* 小話（写真の下に手書きで書き添える。長いときはこの中だけスクロール） */
+.viewer-story {
+  display: inline-block;
+  max-width: 34em;
+  max-height: 26vh;
+  margin: 6px 0 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font-size: 15px;
+  line-height: 1.8;
+  letter-spacing: 0.03em;
+  text-align: left;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.viewer-story[hidden] { display: none; }
+
 .viewer-caption {
   margin: 0;
   color: var(--ink);
@@ -572,4 +651,9 @@ button {
     scroll-behavior: auto !important;
   }
   .spinner { animation: none; border-top-color: var(--tile); }
+  /* 現像・書き順は動かさず、最初から仕上がった状態で見せる */
+  .tile img,
+  .cover-img { filter: none !important; transition-delay: 0s !important; }
+  .title-art .stroke { animation: none !important; stroke-dashoffset: 0; }
+  .title-art .ink-full { animation: none !important; opacity: 1; }
 }
