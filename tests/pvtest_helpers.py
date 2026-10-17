@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TOOLS = PROJECT_ROOT / "tools"
-SITE_FILES = ("index.html", "css/style.css", "js/app.js", ".nojekyll", "config.example.json", "requirements.txt", ".gitignore", ".gitattributes", "pytest.ini", "fonts/klee-one-subset.woff2", "fonts/OFL.txt")
+SITE_FILES = ("index.html", "css/style.css", "css/klee-one.css", "js/app.js", ".nojekyll", "config.example.json", "requirements.txt", ".gitignore", ".gitattributes", "pytest.ini", "fonts/klee-one-subset.woff2", "fonts/OFL.txt")
 
 
 def make_project(dest: Path) -> Path:
@@ -26,6 +26,8 @@ def make_project(dest: Path) -> Path:
         if src.exists():
             (dest / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest / rel)
+    if (PROJECT_ROOT / "fonts" / "klee-one").is_dir():  # 手書き風フォントの全文字版（文字の範囲ごとのファイル）
+        shutil.copytree(PROJECT_ROOT / "fonts" / "klee-one", dest / "fonts" / "klee-one", dirs_exist_ok=True)
     for d in ("source_photos", "photos", "thumbs", "data"):
         (dest / d).mkdir(exist_ok=True)
     (dest / "source_photos" / ".gitkeep").touch()
@@ -33,8 +35,8 @@ def make_project(dest: Path) -> Path:
     (dest / "thumbs" / ".gitkeep").touch()
     # 実プロジェクトの公開データに依存しないよう、常に空のギャラリーから始める
     empty = {
-        "specId": "PV-SPEC-2026-10-v7",
-        "specVersion": "7.0",
+        "specId": "PV-SPEC-2026-10-v8",
+        "specVersion": "8.0",
         "schemaVersion": 3,
         "title": "写真",
         "timezone": "Asia/Tokyo",

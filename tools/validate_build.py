@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""公開出力一式の動的整合性検証（同期仕様ID PV-SPEC-2026-10-v7 / 版 7.0）
+"""公開出力一式の動的整合性検証（同期仕様ID PV-SPEC-2026-10-v8 / 版 8.0）
 
 検証内容:
   JSON構文（UTF-8・BOMなし）/ 同期仕様ID / 必須キーと型 / 旧fiscalYearの混入 /
@@ -35,7 +35,7 @@ from PIL import Image  # noqa: E402
 
 Image.MAX_IMAGE_PIXELS = 250_000_000
 
-SITE_FILES = ("index.html", "css/style.css", "js/app.js", ".nojekyll")
+SITE_FILES = ("index.html", "css/style.css", "css/klee-one.css", "js/app.js", ".nojekyll")
 CSS_URL_RE = re.compile(r"""url\(\s*["']?([^"')]+)["']?\s*\)""")
 FORBIDDEN_WEBP_CHUNKS = {b"EXIF": "EXIF", b"XMP ": "XMP", b"ICCP": "ICCプロファイル"}
 EXTERNAL_URL_RE = re.compile(r"""https?://|(?:src|href)\s*=\s*["']//|url\(\s*["']?//""", re.I)
@@ -181,7 +181,7 @@ def validate(
         for rel in SITE_FILES:
             if not (root / rel).is_file():
                 res.error(f"サイトファイルがありません: {rel}")
-        for rel in ("index.html", "css/style.css", "js/app.js"):
+        for rel in ("index.html", "css/style.css", "css/klee-one.css", "js/app.js"):
             p = root / rel
             if not p.is_file():
                 continue
@@ -261,6 +261,13 @@ def validate(
         if p["dateSource"] not in C.DATE_SOURCES:
             res.error(f"{tag} dateSource が不正です: {p['dateSource']!r}")
             ok = False
+        if "story" in p:  # 小話（仕様 v8）。任意
+            try:
+                if not isinstance(p["story"], str) or not p["story"] or C.normalize_story(p["story"]) != p["story"]:
+                    raise C.StoriesError("空、または前後の空白・改行が整っていません")
+            except C.StoriesError as exc:
+                res.error(f"{tag} story が正しくありません: {exc}")
+                ok = False
         dt = None
         if not isinstance(p["date"], str) or not C.ISO_JST_RE.match(p["date"]):
             res.error(f"{tag} date は Asia/Tokyo(+09:00) の ISO 8601 形式が必要です: {p['date']!r}")

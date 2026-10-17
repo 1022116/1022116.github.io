@@ -1,4 +1,4 @@
-"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v7 / 版 7.0）
+"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v8 / 版 8.0）
 
 試験画像を一時ディレクトリに生成し、build → JSON → 検証 → 再生成までの状態遷移とファイル更新を確認する。
 分類: 正常 / 境界 / 異常 / 競合 / 移行 / 回帰
@@ -186,7 +186,7 @@ class TestNormal:
         raw = (project / "data" / "photos.json").read_bytes()
         assert not raw.startswith(b"\xef\xbb\xbf") and b"\r\n" not in raw
         doc = json.loads(raw.decode("utf-8"))
-        assert doc["specId"] == "PV-SPEC-2026-10-v7" and doc["specVersion"] == "7.0"
+        assert doc["specId"] == "PV-SPEC-2026-10-v8" and doc["specVersion"] == "8.0"
         assert doc["count"] == 1 and doc["years"] == [2025] and doc["timezone"] == "Asia/Tokyo"
         e = doc["photos"][0]
         assert set(e) == set(C.REQUIRED_KEYS)
@@ -811,12 +811,12 @@ class TestRegression:
 
     def test_spec_id_and_version_are_in_sync(self):
         files = ["README.md", "index.html", "js/app.js", "css/style.css", "tools/build_gallery.py",
-                 "tools/validate_build.py", "tools/publish.ps1", "tools/pv_common.py", "tests/test_build.py"]
+                 "tools/validate_build.py", "tools/publish.ps1", "tools/pv_common.py", "tools/admin.py", "tests/test_build.py"]
         for rel in files:
             text = (PROJECT_ROOT / rel).read_text(encoding="utf-8-sig")
-            assert "PV-SPEC-2026-10-v7" in text, rel
-            assert "7.0" in text, rel
-        assert C.SPEC_ID == "PV-SPEC-2026-10-v7" and C.SPEC_VERSION == "7.0"
+            assert "PV-SPEC-2026-10-v8" in text, rel
+            assert "8.0" in text, rel
+        assert C.SPEC_ID == "PV-SPEC-2026-10-v8" and C.SPEC_VERSION == "8.0"
         assert json.loads((PROJECT_ROOT / "data" / "photos.json").read_text(encoding="utf-8"))["specId"] == C.SPEC_ID
 
     def test_publish_script_is_utf8_with_bom(self):
@@ -905,7 +905,7 @@ class TestGuideSync:
     def test_readme_uses_the_guide_commands(self):
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
         for cmd in (
-            "PV-SPEC-2026-10-v7 / version 7.0",
+            "PV-SPEC-2026-10-v8 / version 8.0",
             "Python 3.11",
             "python -m venv .venv",
             r".\.venv\Scripts\Activate.ps1",
@@ -1031,7 +1031,7 @@ class TestFilenameDate:
         assert any("同期仕様ID" in e for e in V.validate(project).errors)
         build_ok(project)
         doc = load_photos(project)
-        assert doc["specId"] == "PV-SPEC-2026-10-v7" and doc["photos"][0]["dateSource"] == "filename"
+        assert doc["specId"] == "PV-SPEC-2026-10-v8" and doc["photos"][0]["dateSource"] == "filename"
         assert run_validate(project).returncode == 0
 
 
@@ -1059,7 +1059,7 @@ class TestBundledFont:
     def test_css_and_html_point_to_the_font(self):
         css = (PROJECT_ROOT / "css" / "style.css").read_text(encoding="utf-8")
         html = (PROJECT_ROOT / "index.html").read_text(encoding="utf-8")
-        assert 'url("../fonts/klee-one-subset.woff2")' in css and 'font-family: "Klee One"' in css
+        assert 'url("../fonts/klee-one-subset.woff2")' in css and 'font-family: "Klee One UI"' in css
         assert 'href="fonts/klee-one-subset.woff2"' in html
 
     def test_font_covers_every_character_on_screen(self):
@@ -1071,6 +1071,20 @@ class TestBundledFont:
         need |= {chr(c) for c in range(0x3041, 0x3097)} | {chr(c) for c in range(0x30A1, 0x30FB)}
         missing = sorted(c for c in need if c.isprintable() and ord(c) not in cmap)
         assert missing == [], f"フォントに入っていない文字: {''.join(missing)}"
+
+    def test_full_font_is_split_by_character_range(self):
+        """小話などに書いたどの漢字も手書き風で出るよう、全文字版を文字の範囲ごとに同梱している。"""
+        css = (PROJECT_ROOT / "css" / "klee-one.css").read_text(encoding="utf-8")
+        faces = re.findall(r'url\("\.\./fonts/klee-one/([a-z0-9-]+\.woff2)"\)[^}]*unicode-range:([^}]+)\}', css)
+        assert len(faces) >= 120 and all((PROJECT_ROOT / "fonts" / "klee-one" / f).is_file() for f, _ in faces)
+        assert 'font-family:"Klee One"' in css and "font-display:swap" in css
+        ttlib = pytest.importorskip("fontTools.ttLib", reason="fontTools 未導入（フォントの文字確認をスキップ）")
+        pytest.importorskip("brotli", reason="brotli 未導入（WOFF2 を読めないためスキップ）")
+        covered = set()
+        for f, _ in faces:
+            covered |= set(ttlib.TTFont(PROJECT_ROOT / "fonts" / "klee-one" / f).getBestCmap())
+        sample = "鰯雲がきれいだった朝。川沿いを歩いた。猫と珈琲、誕生日の食卓。旅館の露天風呂、紅葉。"
+        assert [c for c in sample if ord(c) not in covered] == []
 
     def test_validator_detects_missing_css_asset(self, project):
         build_ok(project)

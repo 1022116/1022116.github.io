@@ -1,4 +1,4 @@
-"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v7 / 版 7.0）
+"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v8 / 版 8.0）
 
 Playwright（Chromium）でスマートフォン画面をエミュレートし、試験画像から生成したサイトを
 GitHub Pages と同じ「リポジトリ名のサブパス」で配信して確認する。
@@ -331,11 +331,11 @@ def test_title_uses_bundled_handwriting_font(pw, site):
         assert page.inner_text("#app-title") == "Daily"
         assert not page.evaluate("document.getElementById('app-title').classList.contains('is-ja')")
         page.evaluate("document.fonts.ready")
-        assert page.evaluate("document.fonts.check('16px \"Klee One\"', 'Daily 2026年の16枚')")
-        assert page.evaluate("[...document.fonts].some(f => f.family.replace(/\"/g, '') === 'Klee One' && f.status === 'loaded')")
+        assert page.evaluate("document.fonts.check('16px \"Klee One UI\"', 'Daily 2026年の16枚')")
+        assert page.evaluate("[...document.fonts].some(f => f.family.replace(/\"/g, '') === 'Klee One UI' && f.status === 'loaded')")
         assert any(u == site["main"] + "fonts/klee-one-subset.woff2" for u in w.requests)
         fams = page.evaluate("['#app-title', '#tab-2026', '#photo-count', '.tile-date'].map(s => getComputedStyle(document.querySelector(s)).fontFamily)")
-        assert all(f.startswith('"Klee One"') for f in fams), fams
+        assert all(f.startswith('"Klee One UI", "Klee One"') for f in fams), fams
         assert page.title() == "Daily"
         lines = page.evaluate("Math.round(document.getElementById('app-title').getBoundingClientRect().height / parseFloat(getComputedStyle(document.getElementById('app-title')).lineHeight))")
         assert lines == 1  # 画面幅いっぱいでも1行に収まる
@@ -815,6 +815,10 @@ def test_reduced_motion_disables_transitions(pw, site):
         dur = page.evaluate("getComputedStyle(document.getElementById('viewer-img')).transitionDuration")
         assert all(float(d.strip().rstrip("s")) <= 0.0001 for d in dur.split(","))
         assert page.evaluate("getComputedStyle(document.querySelector('.year-tab')).transitionDuration").startswith("1e-05")
+        # 現像はせず、最初から仕上がった写真を見せる
+        page.click("#viewer-close")
+        page.wait_for_selector(".tile[data-index='0'].is-developed")
+        assert page.evaluate("getComputedStyle(document.querySelector('.tile[data-index=\"0\"] img')).filter") == "none"
         w.assert_clean()
     finally:
         ctx.close()
@@ -1156,4 +1160,154 @@ def test_cover_button_has_its_own_name(phone, site):
     page, w = open_page(phone, site["main"])
     assert page.get_attribute("#cover-btn", "aria-label") == "表紙の写真を全画面で見る"
     assert page.get_by_role("button", name=re.compile("撮影の写真")).count() == 60  # 一覧の写真だけ
+    w.assert_clean()
+
+
+# ===========================================================================
+# 仕様 v8: 演出（現像・サイト名の書き順）と小話
+# ===========================================================================
+def _patch_doc(page, fn):
+    def handler(route):
+        resp = route.fetch()
+        doc = resp.json()
+        fn(doc)
+        route.fulfill(response=resp, json=doc)
+
+    page.route("**/data/photos.json", handler)
+
+
+def test_photos_develop_when_they_come_into_view(phone, site):
+    page, w = open_page(phone, site["main"])
+    page.wait_for_selector("#cover-btn.is-developed")
+    page.wait_for_selector(".tile[data-index='0'].is-developed")
+    far = ".tile[data-index='50']"
+    assert page.locator(far).count() == 1
+    assert not page.evaluate(f"document.querySelector(\"{far}\").classList.contains('is-developed')")  # 画面の外はまだ
+    assert page.evaluate(f"getComputedStyle(document.querySelector(\"{far} img\")).opacity") == "0"
+    page.evaluate(f"document.querySelector(\"{far}\").scrollIntoView({{block: 'center'}})")
+    page.wait_for_selector(f"{far}.is-developed")
+    page.wait_for_timeout(2600)  # 現像し終わるまで
+    st = page.evaluate(f"(() => {{ const s = getComputedStyle(document.querySelector(\"{far} img\")); return [s.opacity, s.filter]; }})()")
+    assert st == ["1", "none"]
+    w.assert_clean()
+
+
+def test_develop_does_not_break_year_switch_or_broken_images(phone, site):
+    page = phone.new_page()
+    w = Watch(page)
+    p0 = site["doc"]["photos"][0]
+    page.route(f"**/{p0['thumb']}", lambda r: r.fulfill(status=404, body=""))
+    page.goto(site["main"])
+    page.wait_for_selector("html[data-pv=ready]")
+    page.wait_for_selector(".tile[data-index='0'].is-broken.is-developed")
+    assert page.is_visible(".tile[data-index='0'] .tile-fallback")
+    page.click("#tab-2025")
+    page.wait_for_selector(".tile[data-index='0'].is-developed")
+    assert w.page_errors == []
+
+
+def test_title_daily_is_drawn_in_stroke_order_once_per_tab(phone, site):
+    page = phone.new_page()
+    w = Watch(page)
+    _patch_doc(page, lambda d: d.update(title="Daily"))
+    page.goto(site["main"])
+    page.wait_for_selector("html[data-pv=ready]")
+    assert page.evaluate("document.getElementById('app-title').classList.contains('has-art')")
+    assert page.inner_text("#app-title .visually-hidden") == "Daily" and page.title() == "Daily"
+    assert page.get_attribute("#app-title svg", "aria-hidden") == "true"
+    assert page.locator("#app-title svg .stroke").count() == 9  # D(2) a(2) i(2) l(1) y(2)
+    assert page.evaluate("document.querySelector('#app-title svg').classList.contains('is-drawing')")
+    delays = page.eval_on_selector_all("#app-title svg .stroke", "els => els.map(e => parseFloat(getComputedStyle(e).animationDelay))")
+    assert delays == sorted(delays) and delays[0] > 0  # 書き順どおりに1画ずつ
+    page.wait_for_timeout(500)
+    first = page.evaluate("parseFloat(getComputedStyle(document.querySelector('#app-title svg .stroke')).strokeDashoffset)")
+    last = page.evaluate("parseFloat(getComputedStyle([...document.querySelectorAll('#app-title svg .stroke')].pop()).strokeDashoffset)")
+    assert last > 0  # まだ書いていない画が残っている
+    page.wait_for_timeout(3500)
+    done = page.eval_on_selector_all("#app-title svg .stroke", "els => els.map(e => parseFloat(getComputedStyle(e).strokeDashoffset))")
+    assert all(abs(x) < 0.5 for x in done), done
+    assert page.evaluate("getComputedStyle(document.querySelector('#app-title svg .ink-full')).opacity") == "1"
+    page.reload()  # 同じタブでは描き終わった状態で表示
+    page.wait_for_selector("html[data-pv=ready]")
+    assert page.evaluate("document.querySelector('#app-title svg').classList.contains('is-drawn')")
+    assert page.evaluate("getComputedStyle(document.querySelector('#app-title svg .ink-full')).opacity") == "1"
+    assert first < 2000
+    w.assert_clean()
+
+
+def test_other_titles_are_plain_text(phone, site):
+    page = phone.new_page()
+    w = Watch(page)
+    _patch_doc(page, lambda d: d.update(title="Notes"))
+    page.goto(site["main"])
+    page.wait_for_selector("html[data-pv=ready]")
+    assert page.inner_text("#app-title") == "Notes" and page.locator("#app-title svg").count() == 0
+    w.assert_clean()
+
+
+def test_title_is_not_animated_with_reduced_motion(pw, site):
+    p, browser = pw
+    ctx = browser.new_context(**p.devices["iPhone 13"], reduced_motion="reduce")
+    try:
+        page = ctx.new_page()
+        w = Watch(page)
+        _patch_doc(page, lambda d: d.update(title="Daily"))
+        page.goto(site["main"])
+        page.wait_for_selector("html[data-pv=ready]")
+        assert page.evaluate("document.querySelector('#app-title svg').classList.contains('is-drawn')")
+        assert page.evaluate("getComputedStyle(document.querySelector('#app-title svg .ink-full')).opacity") == "1"
+        w.assert_clean()
+    finally:
+        ctx.close()
+
+
+def test_story_is_shown_in_viewer_with_handwriting_font(phone, site):
+    p0, p1, p2 = site["doc"]["photos"][:3]
+    stories = {p0["id"]: "鰯雲がきれいだった朝。\n川沿いを歩いた。", p2["id"]: "<img src=x onerror=alert(1)>"}
+
+    def add(doc):
+        for ph in doc["photos"]:
+            if ph["id"] in stories:
+                ph["story"] = stories[ph["id"]]
+
+    page = phone.new_page()
+    w = Watch(page)
+    _patch_doc(page, add)
+    page.goto(site["main"])
+    page.wait_for_selector("html[data-pv=ready]")
+    assert page.locator("#grid > li:nth-child(1) .tile-cap .tile-story").count() == 1  # 一覧に鉛筆の印
+    assert page.locator("#grid > li:nth-child(2) .tile-cap .tile-story").count() == 0
+    assert page.get_attribute(".tile[data-index='0'] img", "alt").endswith("（小話あり）")
+    page.click(".tile[data-index='0']")
+    assert page.is_visible("#viewer-story")
+    assert page.inner_text("#viewer-story") == "鰯雲がきれいだった朝。\n川沿いを歩いた。"
+    assert page.get_attribute("#viewer", "aria-describedby") == "viewer-caption viewer-story"
+    page.wait_for_function("document.fonts.check('15px \"Klee One\"', '鰯')", timeout=10000)
+    page.wait_for_function("[...document.fonts].some(f => f.family.replace(/\"/g, '') === 'Klee One' && f.status === 'loaded')")
+    assert site["main"] + "css/klee-one.css" in w.requests
+    assert any(u.startswith(site["main"] + "fonts/klee-one/") for u in w.requests)  # 必要な範囲のファイルだけ
+    assert sum(1 for u in w.requests if "/fonts/klee-one/" in u) < 20
+    fam = page.evaluate("getComputedStyle(document.getElementById('viewer-story')).fontFamily")
+    assert fam.startswith('"Klee One UI", "Klee One"')
+    box = page.evaluate("(() => { const s = document.getElementById('viewer-story').getBoundingClientRect(); const i = document.getElementById('viewer-img').getBoundingClientRect(); return [s.top, i.bottom]; })()")
+    assert box[0] >= box[1] - 1  # 写真の下に書き添える
+    page.click("#viewer-next")
+    assert page.is_hidden("#viewer-story")  # 小話のない写真では出さない
+    page.click("#viewer-next")
+    assert page.inner_text("#viewer-story") == stories[p2["id"]]  # 文字として表示（HTMLとして解釈しない）
+    assert page.locator("#viewer-story img").count() == 0
+    w.assert_clean()
+
+
+def test_long_story_scrolls_inside_and_photo_stays_visible(phone, site):
+    p0 = site["doc"]["photos"][0]
+    page = phone.new_page()
+    w = Watch(page)
+    _patch_doc(page, lambda d: [ph.update(story="長い小話。" * 200) for ph in d["photos"] if ph["id"] == p0["id"]])
+    page.goto(site["main"])
+    page.wait_for_selector("html[data-pv=ready]")
+    page.click(".tile[data-index='0']")
+    page.wait_for_function("document.getElementById('viewer-img').naturalWidth > 0")
+    r = page.evaluate("(() => { const s = document.getElementById('viewer-story'); const i = document.getElementById('viewer-img').getBoundingClientRect(); return { scroll: s.scrollHeight > s.clientHeight, h: s.getBoundingClientRect().height, img: i.height, vh: innerHeight }; })()")
+    assert r["scroll"] and r["h"] <= r["vh"] * 0.27 and r["img"] > r["vh"] * 0.3
     w.assert_clean()
