@@ -1059,13 +1059,13 @@ def test_viewer_controls_do_not_cover_photo(phone, site):
                     bg: getComputedStyle(document.getElementById('viewer')).backgroundColor }; })()"""
     )
     assert r["prev"] is False and r["next"] is False and r["close"] is False and r["navBelow"]
-    assert r["bg"] == "rgb(244, 239, 228)"  # 生成り色の壁
+    assert r["bg"] == "rgb(255, 255, 255)"  # 白い壁
     w.assert_clean()
 
 
 @pytest.mark.parametrize("scheme", ["light", "dark"])
-def test_always_cream_background_and_black_text(pw, site, scheme):
-    """スマホがダークモードでも、生成り色の背景に黒い文字。選んでいる年は色ではなく下線で示す。"""
+def test_always_white_background_and_black_text(pw, site, scheme):
+    """スマホがダークモードでも、白い背景に黒い文字。選んでいる年は色ではなく下線で示す。"""
     p, browser = pw
     ctx = browser.new_context(**p.devices["iPhone 13"], color_scheme=scheme)
     try:
@@ -1077,9 +1077,9 @@ def test_always_cream_background_and_black_text(pw, site, scheme):
                         text: ['#app-title', '#tab-2026', '#tab-2025', '.bar-year[data-year="2024"]', '#photo-count',
                                '#photo-range', '.tile-no', '.tile-date'].map(c) }; })()"""
         )
-        assert colors["body"] == "rgb(244, 239, 228)"
-        assert colors["bar"].startswith("rgba(244, 239, 228") or colors["bar"] == "rgb(244, 239, 228)"
-        assert page.get_attribute("meta[name=theme-color]", "content") == "#f4efe4"
+        assert colors["body"] == "rgb(255, 255, 255)"
+        assert colors["bar"].startswith("rgba(255, 255, 255") or colors["bar"] == "rgb(255, 255, 255)"
+        assert page.get_attribute("meta[name=theme-color]", "content") == "#ffffff"
         assert set(colors["text"]) == {"rgb(0, 0, 0)"}, colors["text"]
         deco = lambda s: page.evaluate("s => getComputedStyle(document.querySelector(s)).textDecorationLine", s)
         assert deco("#tab-2026") == "underline" and deco("#tab-2025") == "none"
@@ -1092,7 +1092,7 @@ def test_always_cream_background_and_black_text(pw, site, scheme):
             """(() => ({ bg: getComputedStyle(document.getElementById('viewer')).backgroundColor,
                          text: ['#viewer-no', '#viewer-counter', '#viewer-caption'].map(s => getComputedStyle(document.querySelector(s)).color) }))()"""
         )
-        assert v["bg"] == "rgb(244, 239, 228)" and set(v["text"]) == {"rgb(0, 0, 0)"}
+        assert v["bg"] == "rgb(255, 255, 255)" and set(v["text"]) == {"rgb(0, 0, 0)"}
         w.assert_clean()
     finally:
         ctx.close()

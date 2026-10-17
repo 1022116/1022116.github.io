@@ -190,7 +190,7 @@ class AdminApp:
 
 def _page(title: str, body: str, nonce: str, script: str = "") -> bytes:
     css = """
-:root { --bg:#f4efe4; --ink:#000; --line:#d9d0bf; --tile:#e8e1d3; --focus:#2f6feb; }
+:root { --bg:#ffffff; --ink:#000; --line:#d6d6d6; --tile:#f0f0ef; --focus:#2f6feb; }
 * { box-sizing: border-box; }
 body { margin:0; background:var(--bg); color:var(--ink); font: 15px/1.7 system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif; }
 main { max-width: 860px; margin: 0 auto; padding: 24px 16px 80px; }
@@ -202,7 +202,7 @@ button { min-height: 40px; padding: 6px 18px; border: 1px solid var(--ink); bord
 button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .login { max-width: 360px; margin: 12vh auto 0; }
 .login label { display:block; margin: 14px 0 4px; font-size: 13px; }
-.login input { width:100%; padding: 8px 10px; border:1px solid var(--line); border-radius: 6px; background:#fffdf8; }
+.login input { width:100%; padding: 8px 10px; border:1px solid var(--line); border-radius: 6px; background:#fff; }
 .login button { margin-top: 20px; width: 100%; }
 .error { color: #a01818; font-size: 13px; margin: 12px 0 0; }
 h2 { font-size: 18px; font-weight: 500; margin: 36px 0 8px; }
@@ -210,7 +210,7 @@ h2 { font-size: 18px; font-weight: 500; margin: 36px 0 8px; }
 .item img { width:120px; height:120px; object-fit:cover; background:var(--tile); display:block; }
 .meta { font-size: 12px; margin: 0 0 6px; display:flex; gap: 12px; flex-wrap: wrap; }
 .meta .src { overflow-wrap:anywhere; opacity: .75; }
-textarea { width:100%; min-height: 96px; padding: 8px 10px; border:1px solid var(--line); border-radius: 6px; background:#fffdf8; resize: vertical; line-height: 1.7; }
+textarea { width:100%; min-height: 96px; padding: 8px 10px; border:1px solid var(--line); border-radius: 6px; background:#fff; resize: vertical; line-height: 1.7; }
 .row { display:flex; align-items:center; gap: 12px; margin-top: 8px; font-size: 12px; }
 .count { margin-left: auto; }
 .status.saved { color: #1b6e2a; } .status.error { color: #a01818; }
