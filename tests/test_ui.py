@@ -992,14 +992,15 @@ def test_slow_mobile_network_shows_loading_then_photos(pw, site):
 # 見出しは流れ、年の行だけが残る／全画面表示の操作は写真に重ならない
 # ===========================================================================
 def test_only_top_bar_stays_on_scroll(phone, site):
-    """上部のバー（名前と小さな年リンク）だけが残り、大きな年の索引と表紙はスクロールで流れる。"""
+    """上部のバー（名前と小さな年）だけが残り、表紙はスクロールで流れる。"""
     page, w = open_page(phone, site["main"])
-    assert page.is_visible("#app-title") and page.is_visible(".year-index")
+    assert page.is_visible("#app-title") and page.is_visible("#tab-2026")
     page.evaluate("window.scrollTo(0, 1400)")
     page.wait_for_timeout(200)
     bar = page.evaluate("document.querySelector('.site-bar').getBoundingClientRect().top")
-    index_bottom = page.evaluate("document.querySelector('.year-index').getBoundingClientRect().bottom")
-    assert abs(bar) < 1 and index_bottom <= 0
+    cover_bottom = page.evaluate("document.getElementById('cover').getBoundingClientRect().bottom")
+    assert abs(bar) < 1 and cover_bottom <= 0
+    assert page.is_visible("#tab-2025")  # 年はスクロールしても押せる
     assert page.evaluate("getComputedStyle(document.querySelector('.site-bar')).borderBottomWidth") == "0px"
     assert page.evaluate("document.querySelector('.site-bar').getBoundingClientRect().height") <= 64  # 写真の表示領域を広く保つ
     w.assert_clean()
@@ -1009,13 +1010,13 @@ def test_top_bar_year_links_switch_year(phone, site):
     page, w = open_page(phone, site["main"])
     links = page.eval_on_selector_all(".bar-year", "els => els.map(e => e.textContent)")
     assert links == ["2026", "2025", "2024", "2023"]
-    assert page.get_attribute(".bar-year[data-year='2026']", "aria-current") == "true"
+    assert page.get_attribute(".bar-year[data-year='2026']", "aria-selected") == "true"
     page.evaluate("window.scrollTo(0, 1400)")
     page.wait_for_timeout(200)
     page.click(".bar-year[data-year='2025']")  # スクロールした先からでも年を切り替えられる
     assert selected_tab(page) == "2025"
-    assert page.get_attribute(".bar-year[data-year='2025']", "aria-current") == "true"
-    assert page.get_attribute(".bar-year[data-year='2026']", "aria-current") is None
+    assert page.get_attribute(".bar-year[data-year='2025']", "aria-selected") == "true"
+    assert page.get_attribute(".bar-year[data-year='2026']", "aria-selected") == "false"
     expected = [p["id"] for p in site["doc"]["photos"] if p["year"] == 2025]
     assert tile_ids(page) == expected
     assert anchor_id(page) == expected[0]  # その年の先頭が上部バーのすぐ下に
@@ -1025,22 +1026,25 @@ def test_top_bar_year_links_switch_year(phone, site):
     w.assert_clean()
 
 
-def test_year_index_layout(pw, site):
-    """年の索引: スマホは2列、PCは3列で中央にそろえる（参考: ポートフォリオのカテゴリー一覧）。"""
+def test_years_are_only_in_the_top_bar(pw, site):
+    """年は上部バーの右側だけに並べる（名前の下の大きな年の一覧はなし）。表紙はバーのすぐ下から。"""
     p, browser = pw
-    for device, cols in (("iPhone 13", 2), ("desktop", 3)):
+    for device in ("iPhone 13", "desktop"):
         ctx = browser.new_context(**p.devices["iPhone 13"]) if device != "desktop" else browser.new_context(viewport={"width": 1440, "height": 900})
         try:
             page, w = open_page(ctx, site["main"])
-            boxes = page.eval_on_selector_all(".year-tab", "els => els.map(e => { const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top)]; })")
-            first_row = [b for b in boxes if b[1] == boxes[0][1]]
-            assert len(first_row) == cols, (device, boxes)
-            assert boxes[cols][0] == boxes[0][0]  # 次の行は同じ左端から
-            if device == "desktop":
-                left_gap = page.evaluate("document.querySelector('.year-tab').getBoundingClientRect().left")
-                assert left_gap > 80  # 左右に余白をとって中央寄せ
-            size = page.evaluate("parseFloat(getComputedStyle(document.querySelector('.year-tab')).fontSize)")
-            assert size >= 24  # 大きな文字
+            assert page.locator(".year-index").count() == 0
+            assert page.locator("[role=tablist]").count() == 1 and page.locator(".site-bar [role=tablist]").count() == 1
+            r = page.evaluate(
+                """(() => { const box = s => document.querySelector(s).getBoundingClientRect();
+                   const bar = box('.site-bar'), title = box('#app-title'), first = box('#tab-2026'), last = box('#tab-2023'), cover = box('#cover');
+                   return { inBar: first.top >= bar.top && first.bottom <= bar.bottom, rightOfTitle: first.left > title.right,
+                            sameRow: Math.abs((first.top + first.bottom) / 2 - (title.top + title.bottom) / 2) < 8,
+                            rightEdge: box('.bar-inner').right - last.right, coverGap: cover.top - bar.bottom }; })()"""
+            )
+            assert r["inBar"] and r["rightOfTitle"] and r["sameRow"], (device, r)
+            assert r["rightEdge"] < 60  # 内容の右端（余白の内側）に寄せる
+            assert 0 <= r["coverGap"] <= 60, (device, r)  # 表紙がバーのすぐ下に来る
             w.assert_clean()
         finally:
             ctx.close()
