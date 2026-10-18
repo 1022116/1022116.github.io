@@ -19,13 +19,11 @@
   <header class="app-header site-bar">
     <div class="bar-inner">
       <h1 class="app-title" id="app-title"></h1><!-- サイト名は photos.json の title（config.json の siteTitle）。読込前に仮の名前を出さない -->
-      <nav class="bar-years" id="bar-years" aria-label="年の切り替え（上部）"></nav>
+      <nav class="bar-nav" aria-label="年で絞り込み">
+        <div class="bar-years" id="year-tabs" role="tablist" aria-label="表示する年"></div>
+      </nav>
     </div>
   </header>
-
-  <nav class="year-index" aria-label="年で絞り込み">
-    <div class="year-tabs" id="year-tabs" role="tablist" aria-label="表示する年"></div>
-  </nav>
 
   <main class="app-main" id="main">
     <figure class="cover" id="cover" hidden>

@@ -10,7 +10,7 @@
  *       同じタブでの再読込・戻る操作では復元し、新しいタブ・別の日の再訪問では先頭から表示する。
  *       位置は「画面上端の写真ID＋ずれ(px)」で保存するため、画面幅や写真の追加で多少変わっても同じ写真付近へ戻る。
  *       年タブを切り替えたときは、その年の一覧の先頭（表紙の下）を上部バーのすぐ下に表示する
- *       （保存位置も新しい年の先頭で上書き）。矢印キーで索引を移動しているときは画面を動かさない。
+ *       （保存位置も新しい年の先頭で上書き）。矢印キーで年を移動しているときは画面を動かさない。
  *   - 全画面表示中の写真 … 保存しない。再読込すると一覧（保存した年・位置）に戻る。
  *   - 写真データ … data/photos.json を毎回再検証付き（cache: no-cache）で取得する。
  *   - 保存はスクロール停止後 200ms のタイマーと、ページを離れる時（pagehide / 非表示化）に行う。
@@ -56,7 +56,6 @@
     coverBtn: $('cover-btn'),
     coverImg: $('cover-img'),
     meta: document.querySelector('.site-meta'), // 一覧の先頭（枚数の行）
-    barYears: $('bar-years'),
     tabs: $('year-tabs'),
     status: $('status'),
     statusText: $('status-text'),
@@ -249,7 +248,6 @@
     state.rendered = 0;
     el.grid.textContent = '';
     el.tabs.textContent = '';
-    el.barYears.textContent = '';
     el.count.textContent = '';
     el.range.textContent = '';
     if (!el.title.textContent) el.title.textContent = '写真';
@@ -370,7 +368,7 @@
     state.years.forEach(function (v) {
       var b = document.createElement('button');
       b.type = 'button';
-      b.className = 'year-tab';
+      b.className = 'year-tab bar-year'; // 上部バー右側の小さな年（スクロールしても上に残る）
       b.id = 'tab-' + v;
       b.setAttribute('role', 'tab');
       b.setAttribute('aria-controls', 'grid-panel');
@@ -379,17 +377,6 @@
       b.setAttribute('data-count', String(countFor(v)));
       b.textContent = String(v);
       el.tabs.appendChild(b);
-    });
-    // 上部バーの小さな年リンク（スクロールしても年を切り替えられるように。索引と同じ動作）
-    el.barYears.textContent = '';
-    state.years.forEach(function (v) {
-      var a = document.createElement('button');
-      a.type = 'button';
-      a.className = 'bar-year';
-      a.setAttribute('data-year', String(v));
-      a.setAttribute('aria-label', v + '年を表示');
-      a.textContent = String(v);
-      el.barYears.appendChild(a);
     });
     syncTabs();
   }
@@ -402,10 +389,6 @@
       b.setAttribute('aria-selected', on ? 'true' : 'false');
       b.tabIndex = on ? 0 : -1;
       if (on) active = b;
-    });
-    Array.prototype.forEach.call(el.barYears.children, function (a) {
-      if (a.getAttribute('data-year') === current) a.setAttribute('aria-current', 'true');
-      else a.removeAttribute('aria-current');
     });
     if (active) {
       el.panel.setAttribute('aria-labelledby', active.id);
@@ -433,7 +416,7 @@
     storageSet('localStorage', KEYS.year, String(year));
     syncTabs();
     if (changed) renderGrid();
-    // 選んだ年の写真がすぐ見えるよう、表紙の下の一覧の先頭へ（矢印キーで索引を移動中は動かさない）
+    // 選んだ年の写真がすぐ見えるよう、表紙の下の一覧の先頭へ（矢印キーで年を移動中は動かさない）
     if (!(opts && opts.keepScroll)) window.scrollTo(0, listTop());
     saveScrollNow();
   }
@@ -441,10 +424,6 @@
   el.tabs.addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('.year-tab') : null;
     if (b) selectYear(b.getAttribute('data-year'));
-  });
-  el.barYears.addEventListener('click', function (e) {
-    var a = e.target.closest ? e.target.closest('.bar-year') : null;
-    if (a) selectYear(a.getAttribute('data-year'));
   });
 
   el.tabs.addEventListener('keydown', function (e) {
@@ -553,7 +532,7 @@
     state.developObserver.observe(target);
   }
 
-  // 表紙（年の索引の下に、どの年を選んでいても同じ1枚を大きく表示する）
+  // 表紙（上部バーの下に、どの年を選んでいても同じ1枚を大きく表示する）
   function coverPhoto() {
     for (var i = 0; i < state.photos.length; i++) if (state.photos[i].id === state.coverId) return state.photos[i];
     return null;

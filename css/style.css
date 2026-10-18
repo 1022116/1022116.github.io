@@ -1,11 +1,11 @@
 /* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v8 / 版 8.0）
    S-05: ポートフォリオ型一覧（正方形をスマホ2列・幅640px以上で3列、番号と撮影日を添える）
-         表紙の写真（config.json の coverPhoto、未指定は最新）を年の索引の下に中央へ大きく（どの年でも同じ1枚）
-   S-06: 写真のある年だけを新しい順に（v7 で「すべて」を廃止）。上部バーの小さなリンクと、大きな索引（スマホ2列・PC3列）の両方から選べる
+         表紙の写真（config.json の coverPhoto、未指定は最新）を上部バーの下に中央へ大きく（どの年でも同じ1枚）
+   S-06: 写真のある年だけを新しい順に（v7 で「すべて」を廃止）。上部バー右側の小さな年（タブ）から選ぶ（スクロールしても上に残る）
    S-07: 全画面スライド／reduced-motion 対応
 
    デザイン: 「作品目録」— 写真を作品として扱い、一枚ずつに目録番号（古い順の通し番号）を振る。
-   ・名前は上部バーに小さく、年は大きな文字の索引として並べる（参考: ポートフォリオサイトのカテゴリー一覧）
+   ・名前と年は上部バーに小さく置き、写真をいちばん大きく見せる
    ・情報は小さな文字で左右に振り分け、線や箱で区切らず余白で区切る
    ・白い紙に黒い手書き文字で書き添えるように見せる
    ・全画面表示は白い壁に一枚を掛けるように見せ、操作は写真の下にまとめる
@@ -187,61 +187,18 @@ button {
   cursor: pointer;
   transition: opacity 0.2s ease;
 }
-.bar-year[aria-current="true"] {
+.bar-year[aria-selected="true"] {
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 5px;
 }
 @media (hover: hover) {
-  .bar-year:not([aria-current="true"]):hover { opacity: 0.55; }
+  .bar-year:not([aria-selected="true"]):hover { opacity: 0.55; }
 }
 .bar-year:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.bar-nav { min-width: 0; }
 
-/* ---- 年の索引（参考サイトのカテゴリー一覧の位置。大きな文字で並べる） --------------- */
-.year-index {
-  max-width: var(--maxw);
-  margin: 0 auto;
-  padding: 14px max(var(--side), env(safe-area-inset-right)) 8px max(var(--side), env(safe-area-inset-left));
-}
-
-.year-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2px 16px;
-  margin: 0;
-  padding: 0;
-}
-
-.year-tab {
-  justify-self: start;
-  min-height: 44px;
-  padding: 2px 0;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--ink);
-  font-size: clamp(24px, calc(10px + 3vw), 54px);
-  font-weight: 400;
-  line-height: 1.5;
-  letter-spacing: 0.005em;
-  text-align: left;
-  cursor: pointer;
-  transition: opacity 0.2s ease;
-}
-.year-tab[aria-selected="true"] {
-  text-decoration: underline;
-  text-decoration-thickness: max(1px, 0.04em);
-  text-underline-offset: 0.16em;
-}
-@media (hover: hover) {
-  .year-tab:not([aria-selected="true"]):hover { opacity: 0.55; }
-}
-.year-tab:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-
-/* 枚数とその年の範囲（索引と写真のあいだに小さく） */
+/* 枚数とその年の範囲（表紙と写真のあいだに小さく） */
 .site-meta {
   display: flex;
   justify-content: space-between;
@@ -297,7 +254,7 @@ button {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ---- 表紙の写真（config.json の coverPhoto。どの年でも索引の下に、中央に1枚） ------- */
+/* ---- 表紙の写真（config.json の coverPhoto。どの年でも上部バーの下に、中央に1枚） ------- */
 .cover {
   max-width: var(--maxw);
   margin: 0 auto;
@@ -614,14 +571,6 @@ button {
   .bar-inner { min-height: 72px; }
   .app-title { font-size: 26px; }
   .bar-year { font-size: 13px; padding: 4px 8px; }
-  /* 年の索引は3列で中央に（参考サイトのカテゴリー一覧と同じ並び） */
-  .year-index { padding-top: 28px; padding-bottom: 16px; }
-  .year-tabs {
-    grid-template-columns: repeat(3, minmax(0, 300px));
-    justify-content: center;
-    column-gap: clamp(32px, 6vw, 96px);
-    row-gap: 8px;
-  }
   .cover { padding: 48px var(--side); }
   .site-meta { font-size: 13px; }
   .grid-panel { padding-top: 28px; padding-bottom: 120px; }
