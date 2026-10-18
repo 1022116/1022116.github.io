@@ -337,8 +337,18 @@ def make_handler(app: AdminApp):
             return c[COOKIE].value if COOKIE in c else None
 
         def _body(self, limit: int = 64 * 1024) -> bytes:
-            n = int(self.headers.get("Content-Length") or 0)
+            """要求の本文を受け取る。大きすぎる場合も（1MBまでは）読み捨ててから ValueError にする。"""
+            try:
+                n = max(0, int(self.headers.get("Content-Length") or 0))
+            except ValueError:
+                n = 0
             if n > limit:
+                left = min(n, 1024 * 1024)
+                while left > 0:
+                    chunk = self.rfile.read(min(left, 64 * 1024))
+                    if not chunk:
+                        break
+                    left -= len(chunk)
                 raise ValueError("too large")
             return self.rfile.read(n) if n > 0 else b""
 
@@ -410,13 +420,15 @@ def make_handler(app: AdminApp):
             self._send(HTTPStatus.NOT_FOUND, b"not found", "text/plain; charset=utf-8")
 
         def do_POST(self):
-            if not self._host_ok() or not self._origin_ok():
-                return
-            path = self.path.split("?", 1)[0]
+            # 本文を先に受け取ってから確認・応答する。読まずに応答して接続を閉じると、
+            # Windows では接続がリセットされ、ブラウザーに断りの応答が届かないことがある
             try:
                 raw = self._body()
             except ValueError:
                 return self._send(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, b"too large", "text/plain; charset=utf-8")
+            if not self._host_ok() or not self._origin_ok():
+                return
+            path = self.path.split("?", 1)[0]
             if path == "/login":
                 if app.locked():
                     return self._login_page(429, f"失敗が続いたため、{LOCKOUT_SECONDS}秒ほど待ってからログインしてください")

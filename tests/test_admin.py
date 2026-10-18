@@ -186,6 +186,43 @@ class TestLogin:
         r, _ = req(server, "POST", "/login", f"user=tester&password={PASSWORD}", origin=origin)
         assert r.status == 403
 
+    @pytest.mark.parametrize("path,origin", [("/login", None), ("/login", "http://evil.example"), ("/api/story", None)])
+    def test_refusal_is_sent_after_the_whole_request(self, server, path, origin):
+        """断るときも本文を受け取ってから応答する（読まずに閉じると Windows では接続がリセットされ、応答が届かない）。"""
+        import select
+
+        port = server["port"]
+        body = b"user=tester&password=" + b"x" * 3000
+        head = f"POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/x-www-form-urlencoded\r\n"
+        if origin:
+            head += f"Origin: {origin}\r\n"
+        head += f"Content-Length: {len(body)}\r\n\r\n"
+        with socket.create_connection(("127.0.0.1", port), timeout=10) as s:
+            s.sendall(head.encode("ascii"))
+            ready, _, _ = select.select([s], [], [], 0.5)
+            assert not ready  # 本文が届く前に応答しない
+            s.sendall(body)
+            data = b""
+            while True:
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+        assert data.split(b"\r\n", 1)[0].endswith(b"403 Forbidden"), data[:80]
+
+    def test_oversized_body_gets_a_clean_answer(self, server):
+        port = server["port"]
+        body = b"x" * (200 * 1024)
+        with socket.create_connection(("127.0.0.1", port), timeout=10) as s:
+            s.sendall(f"POST /api/story HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body)
+            data = b""
+            while True:
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+        assert b" 413 " in data.split(b"\r\n", 1)[0]
+
     def test_logout_ends_session(self, server):
         _r, cookie = login(server)
         req(server, "POST", "/logout", "", cookie=cookie)
