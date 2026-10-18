@@ -819,6 +819,12 @@ class TestRegression:
         assert C.SPEC_ID == "PV-SPEC-2026-10-v8" and C.SPEC_VERSION == "8.0"
         assert json.loads((PROJECT_ROOT / "data" / "photos.json").read_text(encoding="utf-8"))["specId"] == C.SPEC_ID
 
+    def test_test_temp_folder_is_outside_the_project(self, tmp_path_factory):
+        """試験で作る一時プロジェクト（Git リポジトリを含む）が、本物のリポジトリの中に作られないこと。"""
+        base = tmp_path_factory.getbasetemp().resolve()
+        assert PROJECT_ROOT.resolve() not in base.parents and base != PROJECT_ROOT.resolve()
+        assert "pytest-of-" not in str(base)  # Windows で終了時に失敗する標準の一時フォルダーを使わない
+
     def test_publish_script_is_utf8_with_bom(self):
         raw = (PROJECT_ROOT / "tools" / "publish.ps1").read_bytes()
         assert raw.startswith(b"\xef\xbb\xbf"), "Windows PowerShell 5.1 で日本語を読むには BOM 付き UTF-8 が必要"
