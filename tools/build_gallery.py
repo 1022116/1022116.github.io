@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""写真ビューア 生成スクリプト（同期仕様ID PV-SPEC-2026-10-v8 / 版 8.0）
+"""写真ビューア 生成スクリプト（同期仕様ID PV-SPEC-2026-10-v9 / 版 9.0）
 
 原本フォルダー（既定: source_photos/）を再帰走査し、公開用の
   photos/<年>/<id>.webp   … 詳細画像（元の縦横比・長辺最大1920px・メタデータなし）
@@ -557,10 +557,6 @@ def build(
     root = root.resolve()
     cfg = load_config(root, config_path)
     src_dir = resolve_source_dir(root, cfg)
-    try:
-        stories = C.load_stories(root)  # 小話（仕様 v8）。壊れていれば公開データを変えずに停止する
-    except C.StoriesError as exc:
-        raise BuildError(f"{exc}。管理ページ（tools/admin.py）で保存し直してください。既存の公開データは変更していません。")
     key = settings_key(cfg)
     log.info("原本フォルダー: %s", src_dir)
     log.info("HEIC/HEIF 対応: %s", "あり（pillow-heif）" if HEIF_AVAILABLE else "なし（pillow-heif 未導入）")
@@ -652,13 +648,6 @@ def build(
             }
             for r in results
         ]
-        used_stories = 0
-        for ph in photos:
-            if stories.get(ph["id"]):
-                ph["story"] = stories[ph["id"]]
-                used_stories += 1
-        if stories:
-            log.info("小話: %d件（写真が見つからない小話 %d件）", used_stories, len(stories) - used_stories)
         years = sorted({p["year"] for p in photos}, reverse=True)
         cover_id = resolve_cover(cfg, src_dir, results)
         doc = {

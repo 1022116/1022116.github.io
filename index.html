@@ -7,7 +7,7 @@
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#ffffff">
-  <meta name="pv-spec" content="PV-SPEC-2026-10-v8 8.0">
+  <meta name="pv-spec" content="PV-SPEC-2026-10-v9 9.0">
   <title>写真</title>
   <link rel="preload" href="fonts/klee-one-subset.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
@@ -46,7 +46,7 @@
     </section>
   </main>
 
-  <dialog class="viewer" id="viewer" aria-label="写真の全画面表示" aria-describedby="viewer-caption viewer-story">
+  <dialog class="viewer" id="viewer" aria-label="写真の全画面表示" aria-describedby="viewer-caption">
     <div class="viewer-bar">
       <p class="viewer-no" id="viewer-no" aria-hidden="true"></p>
       <p class="viewer-counter" id="viewer-counter" aria-live="polite"></p>
@@ -63,10 +63,7 @@
       <button type="button" class="viewer-btn viewer-nav viewer-prev" id="viewer-prev" aria-label="前の写真">
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
-      <div class="viewer-text">
-        <p class="viewer-caption" id="viewer-caption"></p>
-        <p class="viewer-story" id="viewer-story" hidden></p>
-      </div>
+      <p class="viewer-caption" id="viewer-caption"></p>
       <button type="button" class="viewer-btn viewer-nav viewer-next" id="viewer-next" aria-label="次の写真">
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>

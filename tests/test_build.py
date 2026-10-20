@@ -1,4 +1,4 @@
-"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v8 / 版 8.0）
+"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v9 / 版 9.0）
 
 試験画像を一時ディレクトリに生成し、build → JSON → 検証 → 再生成までの状態遷移とファイル更新を確認する。
 分類: 正常 / 境界 / 異常 / 競合 / 移行 / 回帰
@@ -186,7 +186,7 @@ class TestNormal:
         raw = (project / "data" / "photos.json").read_bytes()
         assert not raw.startswith(b"\xef\xbb\xbf") and b"\r\n" not in raw
         doc = json.loads(raw.decode("utf-8"))
-        assert doc["specId"] == "PV-SPEC-2026-10-v8" and doc["specVersion"] == "8.0"
+        assert doc["specId"] == "PV-SPEC-2026-10-v9" and doc["specVersion"] == "9.0"
         assert doc["count"] == 1 and doc["years"] == [2025] and doc["timezone"] == "Asia/Tokyo"
         e = doc["photos"][0]
         assert set(e) == set(C.REQUIRED_KEYS)
@@ -811,13 +811,13 @@ class TestRegression:
 
     def test_spec_id_and_version_are_in_sync(self):
         files = ["README.md", "index.html", "js/app.js", "css/style.css", "tools/build_gallery.py",
-                 "tools/validate_build.py", "tools/publish.ps1", "tools/publish.bat", "tools/pv_common.py", "tools/admin.py",
+                 "tools/validate_build.py", "tools/publish.ps1", "tools/publish.bat", "tools/pv_common.py",
                  "tests/test_build.py"]
         for rel in files:
             text = (PROJECT_ROOT / rel).read_text(encoding="utf-8-sig")
-            assert "PV-SPEC-2026-10-v8" in text, rel
-            assert "8.0" in text, rel
-        assert C.SPEC_ID == "PV-SPEC-2026-10-v8" and C.SPEC_VERSION == "8.0"
+            assert "PV-SPEC-2026-10-v9" in text, rel
+            assert "9.0" in text, rel
+        assert C.SPEC_ID == "PV-SPEC-2026-10-v9" and C.SPEC_VERSION == "9.0"
         assert json.loads((PROJECT_ROOT / "data" / "photos.json").read_text(encoding="utf-8"))["specId"] == C.SPEC_ID
 
     def test_test_temp_folder_is_outside_the_project(self, tmp_path_factory):
@@ -932,7 +932,7 @@ class TestGuideSync:
     def test_readme_uses_the_guide_commands(self):
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
         for cmd in (
-            "PV-SPEC-2026-10-v8 / version 8.0",
+            "PV-SPEC-2026-10-v9 / version 9.0",
             "Python 3.11",
             "python -m venv .venv",
             r".\.venv\Scripts\Activate.ps1",
@@ -1058,7 +1058,7 @@ class TestFilenameDate:
         assert any("同期仕様ID" in e for e in V.validate(project).errors)
         build_ok(project)
         doc = load_photos(project)
-        assert doc["specId"] == "PV-SPEC-2026-10-v8" and doc["photos"][0]["dateSource"] == "filename"
+        assert doc["specId"] == "PV-SPEC-2026-10-v9" and doc["photos"][0]["dateSource"] == "filename"
         assert run_validate(project).returncode == 0
 
 
@@ -1098,20 +1098,6 @@ class TestBundledFont:
         need |= {chr(c) for c in range(0x3041, 0x3097)} | {chr(c) for c in range(0x30A1, 0x30FB)}
         missing = sorted(c for c in need if c.isprintable() and ord(c) not in cmap)
         assert missing == [], f"フォントに入っていない文字: {''.join(missing)}"
-
-    def test_full_font_is_split_by_character_range(self):
-        """小話などに書いたどの漢字も手書き風で出るよう、全文字版を文字の範囲ごとに同梱している。"""
-        css = (PROJECT_ROOT / "css" / "klee-one.css").read_text(encoding="utf-8")
-        faces = re.findall(r'url\("\.\./fonts/klee-one/([a-z0-9-]+\.woff2)"\)[^}]*unicode-range:([^}]+)\}', css)
-        assert len(faces) >= 120 and all((PROJECT_ROOT / "fonts" / "klee-one" / f).is_file() for f, _ in faces)
-        assert 'font-family:"Klee One"' in css and "font-display:swap" in css
-        ttlib = pytest.importorskip("fontTools.ttLib", reason="fontTools 未導入（フォントの文字確認をスキップ）")
-        pytest.importorskip("brotli", reason="brotli 未導入（WOFF2 を読めないためスキップ）")
-        covered = set()
-        for f, _ in faces:
-            covered |= set(ttlib.TTFont(PROJECT_ROOT / "fonts" / "klee-one" / f).getBestCmap())
-        sample = "鰯雲がきれいだった朝。川沿いを歩いた。猫と珈琲、誕生日の食卓。旅館の露天風呂、紅葉。"
-        assert [c for c in sample if ord(c) not in covered] == []
 
     def test_validator_detects_missing_css_asset(self, project):
         build_ok(project)
@@ -1210,3 +1196,68 @@ class TestCoverPhoto:
     def test_config_example_documents_cover(self):
         cfg = json.loads((PROJECT_ROOT / "config.example.json").read_text(encoding="utf-8"))
         assert "coverPhoto" in cfg and cfg["coverPhoto"] == ""
+
+
+# ===========================================================================
+# 仕様 v9: 小話（v8）の廃止
+# ===========================================================================
+# 公開されたり試験が失敗したりするため、プロジェクトに残っていてはいけないファイル
+RETIRED_FILES = ("tools/admin.py", "tests/test_admin.py", "css/klee-one.css", "fonts/klee-one")
+
+
+def _without_comments(text: str) -> str:
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    return re.sub(r"(?m)^\s*//.*$", "", text)
+
+
+class TestStoriesRetired:
+    def test_retired_files_are_gone(self):
+        """管理ページと、小話用の全文字版フォントが残っていない（フォントは残っていると公開され続ける）。"""
+        left = [rel for rel in RETIRED_FILES if (PROJECT_ROOT / rel).exists()]
+        assert left == [], f"v9 で廃止したファイルが残っています。git rm -r で削除してください: {left}"
+
+    def test_site_no_longer_shows_stories_or_loads_the_full_font(self):
+        html = _without_comments((PROJECT_ROOT / "index.html").read_text(encoding="utf-8"))
+        js = _without_comments((PROJECT_ROOT / "js" / "app.js").read_text(encoding="utf-8"))
+        css = _without_comments((PROJECT_ROOT / "css" / "style.css").read_text(encoding="utf-8"))
+        assert "viewer-story" not in html + js + css and "tile-story" not in js + css
+        assert not re.search(r"\bstory\b", js) and "小話" not in js
+        assert "klee-one.css" not in html + js + css and "fonts/klee-one/" not in css
+        assert '"Klee One",' not in css  # 文字の並びは「手書き風（画面の文言だけ）→ 端末の書体」
+        assert 'aria-describedby="viewer-caption"' in html
+
+    def test_old_admin_login_in_config_does_not_stop_the_build(self, project):
+        """v8 で config.json に書いた管理ページのログイン情報（admin）が残っていても動き、消してよいと知らせる。"""
+        make_image(src(project) / "a.jpg", exif_dt="2025:05:05 05:05:05")
+        old = {"siteTitle": "Daily", "admin": {"user": "someone", "passwordHash": "pbkdf2_sha256$600000$c2FsdA==$aGFzaA=="}}
+        (project / "config.json").write_text(json.dumps(old), encoding="utf-8")
+        r = build_ok(project)
+        assert "admin は使われなくなりました" in r.stdout and "未知の設定キー" not in r.stdout
+        assert "passwordHash" not in (project / "data" / "photos.json").read_text(encoding="utf-8")
+        cfg, _used, warnings = C.load_config(project)
+        assert "admin" not in cfg and len(warnings) == 1
+        assert run_validate(project).returncode == 0
+
+    def test_leftover_stories_file_is_ignored(self, project):
+        make_image(src(project) / "a.jpg", exif_dt="2025:05:05 05:05:05")
+        build_ok(project)
+        pid = load_photos(project)["photos"][0]["id"]
+        (project / "stories.json").write_text(
+            json.dumps({"version": 1, "stories": {pid: {"text": "海へ行った日。"}}}, ensure_ascii=False), encoding="utf-8")
+        build_ok(project)
+        assert "海へ行った日" not in (project / "data" / "photos.json").read_text(encoding="utf-8")
+        assert run_validate(project).returncode == 0
+
+    def test_v8_data_with_a_story_is_rebuilt_without_it(self, project):
+        make_image(src(project) / "a.jpg", exif_dt="2025:05:05 05:05:05")
+        build_ok(project)
+        doc = load_photos(project)
+        doc["specId"], doc["specVersion"] = "PV-SPEC-2026-10-v8", "8.0"
+        doc["photos"][0]["story"] = "海へ行った日。"
+        write_json(project, doc)
+        assert any("story は使われなくなりました" in e for e in V.validate(project).errors)  # このままでは公開しない
+        build_ok(project)
+        doc = load_photos(project)
+        assert doc["specId"] == C.SPEC_ID and "story" not in doc["photos"][0]
+        assert run_validate(project).returncode == 0

@@ -1,4 +1,4 @@
-/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v8 / 版 8.0）
+/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v9 / 版 9.0）
    S-05: ポートフォリオ型一覧（正方形をスマホ2列・幅640px以上で3列、番号と撮影日を添える）
          表紙の写真（config.json の coverPhoto、未指定は最新）を上部バーの下に中央へ大きく（どの年でも同じ1枚）
    S-06: 写真のある年だけを新しい順に（v7 で「すべて」を廃止）。上部バー右側の小さな年（タブ）から選ぶ（スクロールしても上に残る）
@@ -11,8 +11,8 @@
    ・全画面表示は白い壁に一枚を掛けるように見せ、操作は写真の下にまとめる
    ・写真は画面に入ると、印画紙に像が浮かぶように「現像」されて現れる
    フォント: Klee One（手書き風。SIL Open Font License 1.1、fonts/OFL.txt）。外部配信は使わず同梱。
-     - "Klee One UI": 画面の文言（英数字・かな・画面で使う漢字）だけを取り出した小さなファイル。最初に読み込む
-     - "Klee One":    文字の範囲ごとに分けた全文字版（css/klee-one.css）。app.js が後から読み込み、小話などの漢字に使う */
+     "Klee One UI" は画面の文言（英数字・かな・画面で使う漢字）だけを取り出した小さなファイル。
+     （v9 で小話をやめたため、v8 の全文字版 css/klee-one.css・fonts/klee-one/ は廃止） */
 
 @font-face {
   font-family: "Klee One UI";
@@ -36,8 +36,8 @@
   --col-gap: 12px;
   --row-gap: 28px;
   --maxw: 1280px;
-  --latin: "Klee One UI", "Klee One", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
-  --ja: "Klee One UI", "Klee One", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif;
+  --latin: "Klee One UI", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
+  --ja: "Klee One UI", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif;
   color-scheme: light;
 }
 
@@ -57,7 +57,7 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
-  /* 手書き風の Klee One。画面の文言は小さな UI 版、それ以外の文字は全文字版、どちらもなければ端末の日本語書体 */
+  /* 手書き風の Klee One（画面の文言だけの小さな版）。入っていない文字は端末の日本語書体 */
   font-family: var(--ja);
   font-synthesis: none; /* 太字・斜体を機械的に作らない（手書きの線が崩れるため） */
   font-size: 15px;
@@ -376,15 +376,6 @@ button {
   letter-spacing: 0.02em;
 }
 .tile-no { color: var(--ink); }
-/* 小話のある写真の印（番号の右に小さな鉛筆） */
-.tile-story {
-  display: inline-flex;
-  align-items: center;
-  margin-right: auto;
-  margin-left: -2px;
-  color: var(--ink);
-}
-.tile-story svg { display: block; }
 .tile-date { white-space: nowrap; }
 
 .tile-fallback {
@@ -528,25 +519,8 @@ button {
 }
 .viewer-nav:disabled { visibility: hidden; }
 
-.viewer-text { min-width: 0; text-align: center; }
-/* 小話（写真の下に手書きで書き添える。長いときはこの中だけスクロール） */
-.viewer-story {
-  display: inline-block;
-  max-width: 34em;
-  max-height: 26vh;
-  margin: 6px 0 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  font-size: 15px;
-  line-height: 1.8;
-  letter-spacing: 0.03em;
-  text-align: left;
-  white-space: pre-line;
-  overflow-wrap: anywhere;
-}
-.viewer-story[hidden] { display: none; }
-
 .viewer-caption {
+  min-width: 0;
   margin: 0;
   color: var(--ink);
   font-size: 13px;

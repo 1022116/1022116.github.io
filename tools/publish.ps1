@@ -1,7 +1,7 @@
 ﻿<#
 .SYNOPSIS
   写真ビューアを生成・検証・試験してから GitHub Pages へ公開します。
-  同期仕様ID PV-SPEC-2026-10-v8 / 版 8.0
+  同期仕様ID PV-SPEC-2026-10-v9 / 版 9.0
 
 .DESCRIPTION
   次の順に実行し、どこかで失敗したら commit / push は行いません（S-10）。
@@ -58,16 +58,14 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$SpecId = 'PV-SPEC-2026-10-v8'
-$SpecVersion = '8.0'
+$SpecId = 'PV-SPEC-2026-10-v9'
+$SpecVersion = '9.0'
 $ExitFailed = 1
 $ExitGuard = 2
 $ExitBusy = 75
 
 # 公開対象（これ以外のファイルは publish.ps1 では commit しない）
-$PublishPaths = @('index.html', 'css', 'js', 'fonts', 'data', 'photos', 'thumbs', '.nojekyll', 'stories.json')
-# 小話（管理ページで作る）。まだ作られていないときは対象にしない（git add が「見つからない」で失敗するため）
-$OptionalPublishPaths = @('stories.json')
+$PublishPaths = @('index.html', 'css', 'js', 'fonts', 'data', 'photos', 'thumbs', '.nojekyll')
 $ForbiddenExtensions = @('.jpg', '.jpeg', '.png', '.gif', '.heic', '.heif', '.tif', '.tiff', '.bmp', '.dng', '.raw',
     '.cr2', '.nef', '.arw', '.mov', '.mp4', '.m4v', '.avi', '.zip', '.pem', '.key', '.pfx', '.env')
 $MaxFileBytes = 25MB
@@ -266,15 +264,7 @@ function Invoke-Publish {
     if ($tracked.Count -gt 0) {
         Stop-Publish ("原本が Git の管理対象になっています: {0} … git rm --cached で管理対象から外してください（S-09）。" -f (($tracked | Select-Object -First 5) -join ', '))
     }
-    $addPaths = @()
-    foreach ($p in $PublishPaths) {
-        if (($OptionalPublishPaths -contains $p) -and -not (Test-Path -LiteralPath (Join-Path $Root $p))) {
-            $known = @((Invoke-Git @('ls-files', '--', $p)).Lines | Where-Object { $_ })
-            if ($known.Count -eq 0) { continue }
-        }
-        $addPaths += $p
-    }
-    $r = Invoke-Git (@('add', '-A', '--') + $addPaths)
+    $r = Invoke-Git (@('add', '-A', '--') + $PublishPaths)
     if ($r.Code -ne 0) { Stop-Publish 'git add に失敗しました。' }
     $script:Staged = $true
     $files = @((Invoke-Git @('diff', '--cached', '--name-only', '--diff-filter=ACMRT')).Lines | Where-Object { $_ })

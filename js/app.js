@@ -1,5 +1,5 @@
 /*
- * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v8 / 版 8.0）
+ * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v9 / 版 9.0）
  * HTML / CSS / Vanilla JavaScript のみ。外部CDN・ライブラリなし。URLはすべて相対（GitHub Pages のサブパスで動作）。
  *
  * ■ 状態保存と再読込の仕様
@@ -22,8 +22,7 @@
  *       白くぼやけた像から色と輪郭が浮かぶように表示する（css/style.css）。視差効果を減らす設定では動かさない。
  *   - タイトル … サイト名が index.html の書き順データ（template#title-art）と同じとき、書き順どおりに描く。
  *       タブを開いて最初の1回だけ再生し、再読込・戻る操作では描き終わった状態で表示する。
- *   - 小話 … photos.json の story を全画面表示の写真の下に表示し、一覧には鉛筆の印を付ける。
- *       手書き風の全文字版フォント（css/klee-one.css）は表示の後から読み込む。
+ *   （v8 の小話は v9 で廃止。photos.json に story があっても表示しない）
  */
 (function () {
   'use strict';
@@ -40,7 +39,6 @@
     fontWait: 1500
   });
   var KEYS = Object.freeze({ year: 'pv:selectedYear', scroll: 'pv:scroll', titleDrawn: 'pv:titleDrawn' });
-  var STORY_MAX = 1000; // 小話の最大文字数（tools/pv_common.py の STORY_MAX_CHARS と同じ）
   var PATH_RE = /^(photos|thumbs)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.webp$/;
   var ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
   var JST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -74,7 +72,6 @@
     prev: $('viewer-prev'),
     next: $('viewer-next'),
     caption: $('viewer-caption'),
-    story: $('viewer-story'),
     titleArt: $('title-art')
   };
 
@@ -182,7 +179,6 @@
         height: posInt(e.height),
         alt: (typeof e.alt === 'string' && e.alt.trim()) ? e.alt : formatDateTime(ms) + ' の写真',
         dateSource: e.dateSource,
-        story: (typeof e.story === 'string') ? e.story.trim().slice(0, STORY_MAX) : '',
         order: i
       });
     });
@@ -296,19 +292,7 @@
       if (token !== state.loadToken) return;
       restoreScroll();
       document.documentElement.setAttribute('data-pv', state.photos.length ? 'ready' : 'empty');
-      loadFullFont();
     });
-  }
-
-  // 手書き風フォントの全文字版（文字の範囲ごとのファイル）。小話などに出てくる漢字に使う。
-  // 画面の文言は最初に読み込む小さなフォントで足りるため、表示が終わってから読み込む。
-  function loadFullFont() {
-    if (document.getElementById('pv-font-full')) return;
-    var link = document.createElement('link');
-    link.id = 'pv-font-full';
-    link.rel = 'stylesheet';
-    link.href = 'css/klee-one.css';
-    document.head.appendChild(link);
   }
 
   // ---------------------------------------------------------------- タイトル（書き順で描く）
@@ -463,7 +447,7 @@
     img.decoding = 'async';
     img.width = 480;
     img.height = 480;
-    img.alt = p.story ? p.alt + '（小話あり）' : p.alt;
+    img.alt = p.alt;
     img.addEventListener('load', function () { markLoaded(b); });
     img.addEventListener('error', function () { b.classList.add('is-broken'); markLoaded(b); });
     img.src = p.thumb;
@@ -484,20 +468,10 @@
     date.className = 'tile-date';
     date.textContent = formatDot(p.ms);
     cap.appendChild(no);
-    if (p.story) cap.appendChild(storyMark());
     cap.appendChild(date);
     li.appendChild(b);
     li.appendChild(cap);
     return li;
-  }
-
-  // 小話のある写真に付ける小さな鉛筆の印（読み上げは写真の代替テキストの「小話あり」で行う）
-  function storyMark() {
-    var s = document.createElement('span');
-    s.className = 'tile-story';
-    s.setAttribute('aria-hidden', 'true');
-    s.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" focusable="false"><path d="M3 13l1-3.2L10.6 3.2a1.4 1.4 0 0 1 2 0l.2.2a1.4 1.4 0 0 1 0 2L6.2 12 3 13z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
-    return s;
   }
 
   // ---------------------------------------------------------------- 現像（読み込み済みで、画面に入った写真から）
@@ -809,9 +783,6 @@
     el.counter.textContent = (state.index + 1) + ' / ' + n;
     el.no.textContent = 'No. ' + formatNo(p.no);
     el.caption.textContent = formatDateTime(p.ms) + (p.dateSource === 'mtime' ? '（ファイル更新日時）' : '');
-    el.story.textContent = p.story;
-    el.story.hidden = !p.story;
-    el.story.scrollTop = 0;
     var focused = document.activeElement;
     el.prev.disabled = state.index === 0;
     el.next.disabled = state.index === n - 1;

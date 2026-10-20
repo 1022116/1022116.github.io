@@ -1,4 +1,4 @@
-"""publish.ps1 の試験（同期仕様ID PV-SPEC-2026-10-v8 / 版 8.0）
+"""publish.ps1 の試験（同期仕様ID PV-SPEC-2026-10-v9 / 版 9.0）
 
 一時ディレクトリに Git リポジトリとベアリポジトリ（origin の代わり）を作り、
 ロック → 仮想環境確認 → build → validate → pytest → Git 安全確認 → commit/push の流れと停止条件を確認する。
@@ -76,19 +76,15 @@ def test_publish_commits_and_pushes_only_public_files(repo):
     assert staged(repo) == []
 
 
-def test_publish_commits_stories_and_puts_them_on_the_site(repo):
-    """仕様 v8: 管理ページで書いた小話（stories.json）を公開データと一緒に commit する。"""
-    assert run_publish(repo).returncode == 0
-    head = remote_head(repo)
-    doc = json.loads((repo / "data" / "photos.json").read_text(encoding="utf-8"))
-    pid = doc["photos"][0]["id"]
-    C.save_stories(repo, {pid: "海へ行った日。"})
+def test_leftover_stories_file_is_not_published(repo):
+    """仕様 v9: 小話は廃止。v8 の stories.json が PC に残っていても、公開データにも Git にも入れない。"""
+    (repo / "stories.json").write_text(
+        json.dumps({"version": 1, "stories": {"0123abcd": {"text": "海へ行った日。"}}}, ensure_ascii=False), encoding="utf-8")
     r = run_publish(repo)
     assert r.returncode == 0, out(r)
-    changed = git(repo, "diff", "--name-only", head, remote_head(repo)).stdout.split()
-    assert sorted(changed) == ["data/photos.json", "stories.json"]
+    assert "stories.json" not in git(repo, "ls-files").stdout.split()
     published = json.loads(git(repo, "show", "HEAD:data/photos.json").stdout)
-    assert published["photos"][0]["story"] == "海へ行った日。"
+    assert published["photos"] and all("story" not in p for p in published["photos"])
     assert staged(repo) == []
 
 
