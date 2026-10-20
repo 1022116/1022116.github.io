@@ -54,6 +54,7 @@ photo-viewer/
   tools/build_gallery.py   生成
   tools/validate_build.py  出力一式と設定ファイルの検証
   tools/publish.ps1        生成→検証→試験→安全確認→commit/push
+  tools/publish.bat        publish.ps1 をダブルクリックで実行（デスクトップの「公開する」ショートカット用）
   tools/pv_common.py       共通定義（仕様ID・サイズ・日時・設定・ロック・小話・パスワードのハッシュ）
   tools/admin.py           小話の管理ページ（PC の中だけで開く）
   stories.json          小話（管理ページで保存。publish.ps1 が公開データと一緒に commit）
@@ -187,6 +188,16 @@ PowerShell -ExecutionPolicy Bypass -File .\tools\publish.ps1
 
 **テスト成功時だけ push されたことの確認:** `logs\publish_日時.log` を開き、`6/8 試験に合格しました` の後に `8/8 push しました` があることを確認します。
 変更がなければ `8/8 公開内容に変更はありません` と記録され、commit / push は行いません。
+
+**デスクトップから公開する（ダブルクリック）:** `tools\publish.bat` が上のコマンドと同じことをします。
+エクスプローラーで `tools\publish.bat` を右クリック →「その他のオプションを確認」→「送る」→「デスクトップ（ショートカットを作成）」で
+デスクトップにアイコンができるので、名前を「公開する」に変えて使います。終わると画面の色で結果がわかり、キーを押すまで閉じません。
+
+| 画面の色 | 意味 |
+|---|---|
+| 緑 | 完了（写真に変更があれば公開。サイトへの反映は1〜2分後） |
+| 黄 | 安全装置で停止（終了コード 2）／別の公開が実行中（終了コード 75） |
+| 赤 | 失敗。commit / push はしていません。赤い行を確認します |
 
 | オプション | 動作 |
 |---|---|

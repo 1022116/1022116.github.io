@@ -811,7 +811,8 @@ class TestRegression:
 
     def test_spec_id_and_version_are_in_sync(self):
         files = ["README.md", "index.html", "js/app.js", "css/style.css", "tools/build_gallery.py",
-                 "tools/validate_build.py", "tools/publish.ps1", "tools/pv_common.py", "tools/admin.py", "tests/test_build.py"]
+                 "tools/validate_build.py", "tools/publish.ps1", "tools/publish.bat", "tools/pv_common.py", "tools/admin.py",
+                 "tests/test_build.py"]
         for rel in files:
             text = (PROJECT_ROOT / rel).read_text(encoding="utf-8-sig")
             assert "PV-SPEC-2026-10-v8" in text, rel
@@ -829,6 +830,26 @@ class TestRegression:
         raw = (PROJECT_ROOT / "tools" / "publish.ps1").read_bytes()
         assert raw.startswith(b"\xef\xbb\xbf"), "Windows PowerShell 5.1 で日本語を読むには BOM 付き UTF-8 が必要"
         raw.decode("utf-8-sig")
+
+    def test_publish_launcher_runs_publish_script_and_waits(self):
+        """デスクトップのショートカット用 publish.bat: どこから開いても publish.ps1 を実行し、結果を見るまで閉じない。"""
+        raw = (PROJECT_ROOT / "tools" / "publish.bat").read_bytes()
+        # publish.ps1 が画面を UTF-8 に切り替えた後も cmd.exe が読み違えないよう、英数字だけで書く
+        raw.decode("ascii")
+        assert b"\r\n" in raw and raw.count(b"\n") == raw.count(b"\r\n"), "バッチファイルは CRLF"
+        text = raw.decode("ascii")
+        lines = [ln.strip() for ln in text.splitlines()]
+        assert lines[0].lower() == "@echo off"
+        assert 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0publish.ps1" %*' in lines
+        assert "-Unattended" not in text  # 手動実行なので GitHub の認証画面を出せるようにする
+        assert ":\\" not in text  # PC の場所に依存しない（%~dp0 = このファイルのフォルダー）
+        assert "pause" in lines and lines[-1] == "exit /b %PV_EXIT%"
+        assert lines.index('set "PV_EXIT=%ERRORLEVEL%"') == lines.index(
+            'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0publish.ps1" %*') + 1
+        for code, label in (("0", ":done"), ("2", ":stopped"), ("75", ":busy")):
+            assert f'if "%PV_EXIT%"=="{code}" goto {label[1:]}' in lines and label in lines
+        attrs = (PROJECT_ROOT / ".gitattributes").read_text(encoding="utf-8")
+        assert "*.bat text eol=crlf" in attrs.splitlines()
 
     @pytest.mark.skipif(shutil.which("git") is None, reason="git がありません")
     def test_gitignore_excludes_originals_and_private_files(self, tmp_path):
