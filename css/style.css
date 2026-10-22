@@ -1,19 +1,20 @@
-/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v12 / 版 12.0）
-   S-05: 一覧（v10 で変更）
-         ・動く一覧（html[data-mode="drift"]。ふだん）… 元の縦横比の写真を大小ばらばらに、終わりのない平面へ散らす。
-           スクロール・ドラッグで写真ごとに違う速さで動く（動きは app.js、見た目はこのファイルの「動く一覧」）
+/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v13 / 版 13.0）
+   S-05: 一覧（v10・v12・v13 で変更）。v13 から年で分けず、全部の写真を新しい順に1つの一覧にする（年のタブ・上部のバーは廃止）
+         ・パターン1 散らばる（html[data-mode="drift"]）… 元の縦横比の写真を大小ばらばらに、終わりのない平面へ散らす。
+           スクロール・ドラッグで写真ごとに違う速さで動く（動きは app.js、見た目はこのファイルの「動く一覧」）。
+           散らし方は読み込むたびに変わる。「Change view」の文字も写真と一緒に散らす
+         ・パターン2 列（html[data-mode="elastic"]）… 4:5 の枠で列に並べ、スクロールすると列ごとに遅れてついてくる
          ・動かない一覧（html[data-mode="still"]。視差効果を減らす設定のとき）… v9 までのポートフォリオ型一覧
            （正方形をスマホ2列・幅640px以上で3列、番号と撮影日を添える。
-           表紙の写真（config.json の coverPhoto、未指定は最新）を上部バーの下に中央へ大きく）
-   S-06: 写真のある年だけを新しい順に（v7 で「すべて」を廃止）。動く一覧では年の文字を写真と同じように散らす（v11）。
-         動かない一覧では上部バー右側の小さな年（タブ）から選ぶ（スクロールしても上に残る）
+           表紙の写真（config.json の coverPhoto、未指定は最新）を先頭に中央へ大きく）
+   S-06: 年のタブは v13 で廃止（撮影年の範囲だけを小さく出す）
    v11: サイト名は画面に出さない。選んだもの（フォーカス）の印は青い枠ではなく黒いかぎ「 」
    S-07: 全画面スライド／reduced-motion 対応
 
    デザイン: 「作品目録」— 写真を作品として扱い、一枚ずつに目録番号（古い順の通し番号）を振る。
-   ・写真をいちばん大きく見せる（v11 からサイト名は出さず、年も写真のあいだに散らす）
+   ・写真をいちばん大きく見せる（v11 からサイト名は出さない。v13 から年でも分けない）
    ・情報は小さな文字で左右に振り分け、線や箱で区切らず余白で区切る
-   ・白い紙に黒い手書き文字で書き添えるように見せる
+   ・白い紙に黒い小さな文字で書き添えるように見せる
    ・全画面表示は白い壁に一枚を掛けるように見せ、操作は写真の下にまとめる
    ・写真は画面に入ると、印画紙に像が浮かぶように「現像」されて現れる
    フォント: DotGothic16（v12。点で描いたカクカクした字。SIL Open Font License 1.1、fonts/OFL.txt）。外部配信は使わず同梱。
@@ -30,14 +31,12 @@
   unicode-range: U+20-7E,U+2013,U+2026,U+3001-3002,U+300C-300D,U+3041-3096,U+309B-309C,U+30A1-30FC,U+4E00,U+4E26,U+4E2D,U+4EF6,U+4FE1,U+505C,U+50CF,U+518D,U+5199,U+5217,U+52B9,U+52D5,U+5927,U+5C0F,U+5E74,U+5F0F,U+5F62,U+614B,U+6210,U+6563,U+65B0,U+65E5,U+65E7,U+6642,U+66F4,U+6708-6709,U+6790,U+679A,U+6B62-6B63,U+6F02,U+72B6,U+7406,U+751F,U+753B,U+771F,U+78BA,U+793A,U+79FB,U+7BA1,U+8005,U+8868,U+89A7,U+89E3,U+8A8D,U+8AAD,U+8FBC,U+901A,U+9045,U+9078,U+FF01-FF5E;
 }
 
-/* 色: いつも白い背景に黒い文字（スマホのダークモードでも切り替えない）。
-   選んでいる年は色ではなく下線で示す */
+/* 色: いつも白い背景に黒い文字（スマホのダークモードでも切り替えない） */
 :root {
   --bg: #ffffff;
   --ink: #000000;
   --muted: #9a9a9a; /* 読込中の輪だけに使う（文字には使わない） */
   --tile: #f0f0ef;  /* 読込前の写真の場所（ごく薄い灰色） */
-  --bar: rgba(255, 255, 255, 0.94);
   --side: 16px;
   --col-gap: 12px;
   --row-gap: 28px;
@@ -90,31 +89,6 @@ button {
 }
 .skip-link:focus { top: 8px; }
 
-/* ---- 上部のバー（小さな名前と年。スクロールしても上に残る） ------------------------ */
-.site-bar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: var(--bar);
-  -webkit-backdrop-filter: saturate(1.6) blur(18px);
-  backdrop-filter: saturate(1.6) blur(18px);
-  padding-top: env(safe-area-inset-top);
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .site-bar { background: var(--bg); }
-}
-
-.bar-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  max-width: var(--maxw);
-  min-height: 56px;
-  margin: 0 auto;
-  padding: 6px max(var(--side), env(safe-area-inset-right)) 6px max(var(--side), env(safe-area-inset-left));
-}
-
 /* サイト名は画面に出さない（v11。読み上げとブラウザーのタブの名前にだけ使う。index.html で visually-hidden） */
 
 .visually-hidden {
@@ -129,41 +103,7 @@ button {
   border: 0;
 }
 
-.bar-years {
-  display: flex;
-  gap: 4px;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-.bar-years::-webkit-scrollbar { display: none; }
-
-.bar-year {
-  flex: 0 0 auto;
-  min-width: 36px;
-  min-height: 44px;
-  padding: 4px 6px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--ink);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  transition: opacity 0.2s ease;
-}
-.bar-year[aria-selected="true"] {
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 5px;
-}
-@media (hover: hover) {
-  .bar-year:not([aria-selected="true"]):hover { opacity: 0.55; }
-}
-.bar-nav { min-width: 0; margin-left: auto; } /* 年は右に寄せる */
-
-/* 枚数とその年の範囲（表紙と写真のあいだに小さく） */
+/* 撮影年の範囲（表紙と写真のあいだに小さく。v13 で「〜年の〜枚」は廃止） */
 .site-meta {
   display: flex;
   justify-content: space-between;
@@ -178,6 +118,7 @@ button {
   letter-spacing: 0.04em;
 }
 .app-count { color: var(--ink); }
+.app-count:empty { display: none; } /* ふだんは空（表示できないデータがあるときだけ件数を出す） */
 
 /* ---- 状態表示（読込中・0件・エラー） --------------------------------------- */
 .status {
@@ -218,11 +159,11 @@ button {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ---- 表紙の写真（config.json の coverPhoto。どの年でも上部バーの下に、中央に1枚） ------- */
+/* ---- 表紙の写真（config.json の coverPhoto。動かない一覧の先頭に、中央に1枚） ------- */
 .cover {
   max-width: var(--maxw);
   margin: 0 auto;
-  padding: 28px max(12vw, env(safe-area-inset-right)) 28px max(12vw, env(safe-area-inset-left));
+  padding: max(28px, env(safe-area-inset-top)) max(12vw, env(safe-area-inset-right)) 28px max(12vw, env(safe-area-inset-left));
 }
 .cover[hidden] { display: none; }
 
@@ -500,7 +441,7 @@ button {
 }
 
 /* ---- 動く一覧（v10。視差効果を減らす設定でないとき） ------------------------------------
-   写真は app.js が transform で置く。ページ自体はスクロールせず、一覧が画面いっぱいに広がる（上部バーはその上に重なる） */
+   写真は app.js が transform で置く。ページ自体はスクロールせず、一覧が画面いっぱいに広がる */
 .drift { display: none; }
 
 html[data-mode="drift"],
@@ -597,7 +538,7 @@ html[data-mode="drift"] .drift {
 }
 .drift-item.is-in .drift-line > span { transform: none; }
 
-/* 枚数と年の範囲は、画面の下に小さく重ねる（触っても一覧の操作の邪魔をしない） */
+/* 撮影年の範囲は、画面の下に小さく重ねる（触っても一覧の操作の邪魔をしない） */
 html[data-mode="drift"] .site-meta {
   position: fixed;
   left: 0;
@@ -615,7 +556,7 @@ html[data-mode="drift"] .site-meta > span:not(:empty) {
 
 /* ---- 選んだものの印「」（v11。キーボードの Tab や、全画面表示を閉じたときに戻る場所） ------------------
    青い枠の代わりに、左上と右下に黒いかぎ（「 」）を付ける。写真は外側に大きめ、文字やボタンは小さめ */
-:is(.tile, .cover-btn, .drift-tile, .eg-tile, .bar-year, .drift-year, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch) {
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch) {
   --mark-size: 9px;
   --mark-gap: -2px;
   position: relative;
@@ -624,13 +565,8 @@ html[data-mode="drift"] .site-meta > span:not(:empty) {
   --mark-size: 16px;
   --mark-gap: -8px;
 }
-/* 上部のバーの年は横スクロールの枠の中にあるので、印をボタンの内側（文字の外側）に付ける */
-.bar-year {
-  --mark-size: 8px;
-  --mark-gap: 5px;
-}
-:is(.tile, .cover-btn, .drift-tile, .eg-tile, .bar-year, .drift-year, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::before,
-:is(.tile, .cover-btn, .drift-tile, .eg-tile, .bar-year, .drift-year, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::after {
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::before,
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::after {
   content: "";
   position: absolute;
   z-index: 1;
@@ -641,68 +577,50 @@ html[data-mode="drift"] .site-meta > span:not(:empty) {
   pointer-events: none;
   transition: opacity 0.15s ease;
 }
-:is(.tile, .cover-btn, .drift-tile, .eg-tile, .bar-year, .drift-year, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::before {
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::before {
   top: var(--mark-gap);
   left: var(--mark-gap);
   border-top-width: 1.5px;
   border-left-width: 1.5px;
 }
-:is(.tile, .cover-btn, .drift-tile, .eg-tile, .bar-year, .drift-year, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::after {
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::after {
   right: var(--mark-gap);
   bottom: var(--mark-gap);
   border-right-width: 1.5px;
   border-bottom-width: 1.5px;
 }
 :focus-visible { outline: none; }
-:is(.tile, .cover-btn, .drift-tile, .eg-tile, .bar-year, .drift-year, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch):focus-visible::before,
-:is(.tile, .cover-btn, .drift-tile, .eg-tile, .bar-year, .drift-year, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch):focus-visible::after { opacity: 1; }
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch):focus-visible::before,
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch):focus-visible::after { opacity: 1; }
 .viewer:focus,
 .viewer:focus-visible,
 .chooser:focus,
 .chooser:focus-visible { outline: none; }
 
-/* ---- 動く一覧での年（v11） --------------------------------------------------------
-   上部のバーは出さず、年の文字を写真と同じように散らす。キーボードで年のタブへ移ったときだけバーを出す */
-html[data-mode="drift"] .site-bar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  background: transparent;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  opacity: 0;
-  pointer-events: none;
-}
-html[data-mode="drift"] .site-bar:focus-within {
-  background: var(--bar);
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.drift-year {
+/* ---- 散らした「Change view」（v13。v11 の年の文字の代わり） ------------------------------------
+   写真と同じように散らし、写真と同じ動きをする。押すと見せ方を選ぶ画面が出る */
+.drift-label {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   min-height: 44px;
   margin: 0;
-  padding: 4px 8px;
+  padding: 4px 6px;
   border: 0;
   background: none;
   color: var(--ink);
   font-family: var(--latin);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.06em;
-  cursor: inherit;
-}
-.drift-year.is-current {
+  white-space: nowrap;
   text-decoration: underline;
   text-decoration-thickness: 1px;
-  text-underline-offset: 6px;
+  text-underline-offset: 4px;
+  cursor: pointer;
 }
 @media (hover: hover) {
-  .drift-year:not(.is-current):hover { opacity: 0.55; }
+  .drift-label:hover { opacity: 0.55; }
 }
 
 /* ---- 見せ方（パターン）を選び直すボタン（v12） ------------------------------------------- */
@@ -721,15 +639,20 @@ html[data-mode="drift"] .site-bar:focus-within {
 }
 .pattern-switch[hidden] { display: none; }
 html[data-mode="drift"] .site-meta { justify-content: flex-start; }
+/* パターン1では散らした「Change view」を使うので、このボタンはキーボードで移ったときだけ右下に見せる */
 html[data-mode="drift"] .site-meta .pattern-switch {
   margin-left: auto;
   padding: 2px 6px;
   background: rgba(255, 255, 255, 0.92);
+  opacity: 0;
+  pointer-events: none;
+}
+html[data-mode="drift"] .site-meta .pattern-switch:focus {
+  opacity: 1;
   pointer-events: auto;
 }
 
 /* ---- 最初に見せ方を選ぶ画面（v12） --------------------------------------------------- */
-html[data-mode="choose"] .site-bar,
 html[data-mode="choose"] .site-meta,
 html[data-mode="choose"] .cover,
 html[data-mode="choose"] .grid-panel { visibility: hidden; }
@@ -810,7 +733,7 @@ html[data-mode="choose"] .grid-panel { visibility: hidden; }
 }
 
 /* ---- パターン2: 列（v12。Codrops「Elastic Grid Scroll」の考え方） ---------------------------
-   年・枚数は一覧の上に左寄せで並べ、写真は 4:5 の枠で列に並べる。列の遅れは app.js が transform で付ける */
+   撮影年の範囲と「Change view」は一覧の上に左寄せで並べ、写真は 4:5 の枠で列に並べる。列の遅れは app.js が transform で付ける */
 .elastic { display: none; }
 html[data-mode="elastic"] .cover,
 html[data-mode="elastic"] .grid,
@@ -821,26 +744,11 @@ html[data-mode="elastic"] .grid-panel {
   max-width: none;
   padding: 0;
 }
-html[data-mode="elastic"] .site-bar {
-  position: relative;
-  background: transparent;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-html[data-mode="elastic"] .bar-inner {
-  justify-content: flex-start;
-  max-width: none;
-  min-height: 0;
-  padding: 28px 5vw 0;
-}
-html[data-mode="elastic"] .bar-nav { margin-left: 0; }
-html[data-mode="elastic"] .bar-years { gap: 14px; }
-html[data-mode="elastic"] .bar-year { min-width: 0; padding: 4px 2px; }
 html[data-mode="elastic"] .site-meta {
   justify-content: flex-start;
   gap: 18px;
   max-width: none;
-  padding: 2px 5vw 0;
+  padding: max(28px, env(safe-area-inset-top)) 5vw 0;
 }
 
 .eg-grid {
@@ -848,7 +756,7 @@ html[data-mode="elastic"] .site-meta {
   grid-template-columns: repeat(var(--eg-cols, 3), minmax(0, 1fr));
   column-gap: 5vw;
   align-items: start;
-  padding: 88px 5vw 140px;
+  padding: 64px 5vw 140px;
 }
 .eg-col {
   display: flex;
@@ -889,6 +797,9 @@ html[data-mode="elastic"] .site-meta {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* 列が細くて1行に収まらないときは「No. 47」と「2026.10.11」の2行（app.js の elasticFitCaptions が付ける） */
+.eg-grid.is-stacked .eg-sep { display: none; }
+.eg-grid.is-stacked .eg-date { display: block; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---- 広い画面 ------------------------------------------------------------- */
 /* 横向きのスマホ（幅 640px 以上）から3列。2列だと1枚が画面の高さを超えるため */
@@ -898,8 +809,6 @@ html[data-mode="elastic"] .site-meta {
 
 @media (min-width: 760px) {
   :root { --side: 32px; --col-gap: 20px; --row-gap: 40px; }
-  .bar-inner { min-height: 72px; }
-  .bar-year { font-size: 12px; padding: 4px 8px; }
   .cover { padding: 48px var(--side); }
   .site-meta { font-size: 11px; }
   .grid-panel { padding-top: 28px; padding-bottom: 120px; }

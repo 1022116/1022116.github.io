@@ -7,7 +7,7 @@
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#ffffff">
-  <meta name="pv-spec" content="PV-SPEC-2026-10-v12 12.0">
+  <meta name="pv-spec" content="PV-SPEC-2026-10-v13 13.0">
   <title>写真</title>
   <link rel="preload" href="fonts/dotgothic16-subset.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
@@ -16,43 +16,38 @@
 <body>
   <a class="skip-link" href="#grid-panel">写真一覧へ移動</a>
 
-  <header class="app-header site-bar">
-    <div class="bar-inner">
-      <!-- サイト名（photos.json の title）。v11 から画面には出さず、読み上げとブラウザーのタブの名前にだけ使う -->
-      <h1 class="app-title visually-hidden" id="app-title"></h1>
-      <nav class="bar-nav" aria-label="年で絞り込み">
-        <div class="bar-years" id="year-tabs" role="tablist" aria-label="表示する年"></div>
-      </nav>
-    </div>
-  </header>
-
   <main class="app-main" id="main">
+    <!-- サイト名（photos.json の title）。v11 から画面には出さず、読み上げとブラウザーのタブの名前にだけ使う。
+         v13 で年のタブ（上部のバー）を廃止し、全部の写真を新しい順に1つの一覧にした -->
+    <h1 class="app-title visually-hidden" id="app-title"></h1>
     <figure class="cover" id="cover" hidden>
       <button type="button" class="cover-btn" id="cover-btn" aria-label="表紙の写真を全画面で見る">
         <img class="cover-img" id="cover-img" alt="" decoding="async">
       </button>
     </figure>
     <p class="site-meta">
+      <!-- 撮影年の範囲。app-count は表示できないデータがあるときだけ使う（v13 で「〜年の〜枚」は廃止） -->
       <span class="app-count" id="photo-count"></span>
       <span class="site-range" id="photo-range"></span>
-      <!-- 見せ方（パターン）を選び直す（v12。動く見せ方のときだけ出す） -->
-      <button type="button" class="pattern-switch" id="pattern-switch" hidden>表示を選ぶ</button>
+      <!-- 見せ方（パターン）を選び直す（v12。v13 から英語。動く見せ方のときだけ出す。
+           パターン1では同じ文字を写真と一緒に散らし、このボタンはキーボードで移ったときだけ見せる） -->
+      <button type="button" class="pattern-switch" id="pattern-switch" lang="en" hidden>Change view</button>
     </p>
     <div class="status" id="status" role="status" aria-live="polite" data-state="loading">
       <span class="spinner" aria-hidden="true"></span>
       <p class="status-text" id="status-text">読み込み中…</p>
       <button type="button" class="status-retry" id="status-retry" hidden>再読み込み</button>
     </div>
-    <section class="grid-panel" id="grid-panel" role="tabpanel" aria-label="写真一覧" tabindex="-1">
+    <section class="grid-panel" id="grid-panel" aria-label="写真一覧" tabindex="-1">
       <!-- 動かない一覧（視差効果を減らす設定のとき）: 正方形を縦に並べる -->
       <ul class="grid" id="grid" aria-busy="true"></ul>
       <div class="grid-sentinel" id="grid-sentinel" aria-hidden="true"></div>
-      <!-- 動く一覧（v10）: 写真を終わりのない平面に散らす。位置は app.js が transform で決める。
-           写真が少ないときに画面を埋める複製は drift-copies に、散らした年の文字（v11）は drift-years に入れ、読み上げない -->
+      <!-- 動く一覧（v10）: 写真を終わりのない平面に散らす。位置は app.js が transform で決める（散らし方は読み込むたびに変わる）。
+           写真が少ないときに画面を埋める複製は drift-copies に、散らした「Change view」（v13）は drift-labels に入れ、読み上げない -->
       <div class="drift" id="drift">
         <ul class="drift-list" id="drift-list"></ul>
         <div class="drift-copies" id="drift-copies" aria-hidden="true"></div>
-        <div class="drift-years" id="drift-years" aria-hidden="true"></div>
+        <div class="drift-labels" id="drift-labels" aria-hidden="true"></div>
       </div>
       <!-- パターン2（v12）: 写真を列に並べ、スクロールすると列ごとに遅れてついてくる。列は app.js が作る -->
       <div class="elastic" id="elastic"></div>
@@ -62,7 +57,7 @@
   <!-- 最初に見せ方（パターン）を選ぶ画面（v12）。視差効果を減らす設定のときは出さない -->
   <dialog class="chooser" id="chooser" aria-labelledby="chooser-title">
     <div class="chooser-inner">
-      <p class="chooser-title" id="chooser-title">表示を選ぶ</p>
+      <p class="chooser-title" id="chooser-title" lang="en">Choose a view</p>
       <ul class="chooser-list">
         <li>
           <button type="button" class="chooser-opt" data-pattern="1" aria-describedby="chooser-note-1">
