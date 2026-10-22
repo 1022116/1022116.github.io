@@ -1,4 +1,4 @@
-/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v11 / 版 11.0）
+/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v12 / 版 12.0）
    S-05: 一覧（v10 で変更）
          ・動く一覧（html[data-mode="drift"]。ふだん）… 元の縦横比の写真を大小ばらばらに、終わりのない平面へ散らす。
            スクロール・ドラッグで写真ごとに違う速さで動く（動きは app.js、見た目はこのファイルの「動く一覧」）
@@ -16,17 +16,18 @@
    ・白い紙に黒い手書き文字で書き添えるように見せる
    ・全画面表示は白い壁に一枚を掛けるように見せ、操作は写真の下にまとめる
    ・写真は画面に入ると、印画紙に像が浮かぶように「現像」されて現れる
-   フォント: Klee One（手書き風。SIL Open Font License 1.1、fonts/OFL.txt）。外部配信は使わず同梱。
-     "Klee One UI" は画面の文言（英数字・かな・画面で使う漢字）だけを取り出した小さなファイル。
+   フォント: DotGothic16（v12。点で描いたカクカクした字。SIL Open Font License 1.1、fonts/OFL.txt）。外部配信は使わず同梱。
+     "DotGothic16 UI" は画面の文言（英数字・かな・画面で使う漢字）だけを取り出した小さなファイル。文字は全体に小さめ
+     （v11 までの手書き風フォントは廃止）
      （v9 で小話をやめたため、v8 の全文字版 css/klee-one.css・fonts/klee-one/ は廃止） */
 
 @font-face {
-  font-family: "Klee One UI";
+  font-family: "DotGothic16 UI";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url("../fonts/klee-one-subset.woff2") format("woff2");
-  unicode-range: U+20-7E,U+B7,U+D7,U+2013-2014,U+2018-2019,U+201C-201D,U+2022,U+2026,U+2039-203A,U+3000-3002,U+3005,U+3007,U+300C-300F,U+301C,U+3041-3096,U+309B-309F,U+30A1-30FE,U+4E00,U+4E0A,U+4E2D,U+4EF6,U+4FE1,U+505C,U+50CF,U+5168,U+518D,U+5199,U+5207,U+524D,U+52B9,U+52D5,U+5C0F,U+5E74,U+5F0F,U+5F62,U+614B,U+6210,U+65B0,U+65E5,U+65E7,U+6642,U+66F4,U+66FF,U+6708-6709,U+6790,U+679A,U+6B21,U+6B62-6B63,U+72B6,U+7406,U+751F,U+753B,U+771F,U+78BA,U+793A,U+79FB,U+7BA1,U+7D19,U+7D5E,U+8005,U+8868,U+898B,U+89A7,U+89E3,U+8A71,U+8A8D,U+8AAD,U+8FBC,U+901A,U+90E8,U+9589,U+9762,U+FF01-FF5E;
+  src: url("../fonts/dotgothic16-subset.woff2") format("woff2");
+  unicode-range: U+20-7E,U+2013,U+2026,U+3001-3002,U+300C-300D,U+3041-3096,U+309B-309C,U+30A1-30FC,U+4E00,U+4E26,U+4E2D,U+4EF6,U+4FE1,U+505C,U+50CF,U+518D,U+5199,U+5217,U+52B9,U+52D5,U+5927,U+5C0F,U+5E74,U+5F0F,U+5F62,U+614B,U+6210,U+6563,U+65B0,U+65E5,U+65E7,U+6642,U+66F4,U+6708-6709,U+6790,U+679A,U+6B62-6B63,U+6F02,U+72B6,U+7406,U+751F,U+753B,U+771F,U+78BA,U+793A,U+79FB,U+7BA1,U+8005,U+8868,U+89A7,U+89E3,U+8A8D,U+8AAD,U+8FBC,U+901A,U+9045,U+9078,U+FF01-FF5E;
 }
 
 /* 色: いつも白い背景に黒い文字（スマホのダークモードでも切り替えない）。
@@ -41,8 +42,8 @@
   --col-gap: 12px;
   --row-gap: 28px;
   --maxw: 1280px;
-  --latin: "Klee One UI", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
-  --ja: "Klee One UI", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif;
+  --latin: "DotGothic16 UI", "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif;
+  --ja: "DotGothic16 UI", "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif;
   color-scheme: light;
 }
 
@@ -62,10 +63,10 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
-  /* 手書き風の Klee One（画面の文言だけの小さな版）。入っていない文字は端末の日本語書体 */
+  /* カクカクした DotGothic16（画面の文言だけの小さな版）。入っていない文字は端末の日本語書体 */
   font-family: var(--ja);
   font-synthesis: none; /* 太字・斜体を機械的に作らない（手書きの線が崩れるため） */
-  font-size: 15px;
+  font-size: 12px;
   line-height: 1.6;
   -webkit-tap-highlight-color: transparent;
 }
@@ -147,7 +148,7 @@ button {
   border-radius: 6px;
   background: none;
   color: var(--ink);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: opacity 0.2s ease;
@@ -173,7 +174,7 @@ button {
   margin: 0 auto;
   padding: 12px max(var(--side), env(safe-area-inset-right)) 0 max(var(--side), env(safe-area-inset-left));
   color: var(--ink);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.04em;
 }
 .app-count { color: var(--ink); }
@@ -303,7 +304,8 @@ button {
    視差効果を減らす設定では、下の reduced-motion の指定で動かさずに表示する */
 .tile img,
 .cover-img,
-.drift-tile img {
+.drift-tile img,
+.eg-tile img {
   clip-path: inset(0); /* ぼかしが写真の外へにじまないように（ボタンは「」の印を外側に出すため切り抜かない） */
   opacity: 0;
   filter: blur(7px) sepia(0.55) brightness(1.18) contrast(0.82);
@@ -312,13 +314,15 @@ button {
 }
 .tile.is-developed img,
 .cover-btn.is-developed .cover-img,
-.drift-tile.is-developed img {
+.drift-tile.is-developed img,
+.eg-tile.is-developed img {
   opacity: 1;
   filter: none;
 }
 @media (hover: hover) {
   .tile.is-developed:hover img,
-  .drift-tile.is-developed:hover img { opacity: 0.88; transition-duration: 0.25s; transition-delay: 0s; }
+  .drift-tile.is-developed:hover img,
+  .eg-tile.is-developed:hover img { opacity: 0.88; transition-duration: 0.25s; transition-delay: 0s; }
   .cover-btn.is-developed:hover .cover-img { opacity: 0.92; transition-duration: 0.25s; transition-delay: 0s; }
 }
 
@@ -331,7 +335,7 @@ button {
   gap: 8px;
   margin: 8px 0 0;
   font-family: var(--latin);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.3;
   letter-spacing: 0.02em;
 }
@@ -349,12 +353,13 @@ button {
   justify-content: center;
   padding: 6px;
   color: var(--ink);
-  font-size: 12px;
+  font-size: 11px;
   text-align: center;
 }
 .tile.is-broken img { visibility: hidden; }
 .tile.is-broken .tile-fallback,
-.drift-tile.is-broken .tile-fallback { display: flex; }
+.drift-tile.is-broken .tile-fallback,
+.eg-tile.is-broken .tile-fallback { display: flex; }
 
 .grid-sentinel { height: 1px; }
 .grid-sentinel[hidden] { display: none; }
@@ -400,16 +405,16 @@ button {
 .viewer-no {
   margin: 0;
   font-family: var(--latin);
-  font-size: 22px;
+  font-size: 16px;
   font-weight: 400;
-  letter-spacing: 0;
+  letter-spacing: 0.02em;
 }
 
 .viewer-counter {
   margin: 0;
   color: var(--ink);
   font-family: var(--latin);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.04em;
 }
 
@@ -467,7 +472,7 @@ button {
   position: absolute;
   margin: 0;
   color: var(--ink);
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .viewer-foot {
@@ -483,8 +488,8 @@ button {
   min-width: 0;
   margin: 0;
   color: var(--ink);
-  font-size: 13px;
-  letter-spacing: 0.02em;
+  font-size: 11px;
+  letter-spacing: 0.04em;
   text-align: center;
 }
 
@@ -574,8 +579,8 @@ html[data-mode="drift"] .drift {
 .drift-cap {
   margin: 7px 0 0;
   font-family: var(--latin);
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 10px;
+  line-height: 1.5;
   letter-spacing: 0.04em;
   color: var(--ink);
   white-space: nowrap;
@@ -610,20 +615,12 @@ html[data-mode="drift"] .site-meta > span:not(:empty) {
 
 /* ---- 選んだものの印「」（v11。キーボードの Tab や、全画面表示を閉じたときに戻る場所） ------------------
    青い枠の代わりに、左上と右下に黒いかぎ（「 」）を付ける。写真は外側に大きめ、文字やボタンは小さめ */
-.tile,
-.cover-btn,
-.drift-tile,
-.bar-year,
-.drift-year,
-.viewer-btn,
-.status-retry {
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .bar-year, .drift-year, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch) {
   --mark-size: 9px;
   --mark-gap: -2px;
   position: relative;
 }
-.tile,
-.cover-btn,
-.drift-tile {
+:is(.tile, .cover-btn, .drift-tile, .eg-tile) {
   --mark-size: 16px;
   --mark-gap: -8px;
 }
@@ -632,20 +629,8 @@ html[data-mode="drift"] .site-meta > span:not(:empty) {
   --mark-size: 8px;
   --mark-gap: 5px;
 }
-.tile::before,
-.cover-btn::before,
-.drift-tile::before,
-.bar-year::before,
-.drift-year::before,
-.viewer-btn::before,
-.status-retry::before,
-.tile::after,
-.cover-btn::after,
-.drift-tile::after,
-.bar-year::after,
-.drift-year::after,
-.viewer-btn::after,
-.status-retry::after {
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .bar-year, .drift-year, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::before,
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .bar-year, .drift-year, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::after {
   content: "";
   position: absolute;
   z-index: 1;
@@ -656,47 +641,25 @@ html[data-mode="drift"] .site-meta > span:not(:empty) {
   pointer-events: none;
   transition: opacity 0.15s ease;
 }
-.tile::before,
-.cover-btn::before,
-.drift-tile::before,
-.bar-year::before,
-.drift-year::before,
-.viewer-btn::before,
-.status-retry::before {
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .bar-year, .drift-year, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::before {
   top: var(--mark-gap);
   left: var(--mark-gap);
   border-top-width: 1.5px;
   border-left-width: 1.5px;
 }
-.tile::after,
-.cover-btn::after,
-.drift-tile::after,
-.bar-year::after,
-.drift-year::after,
-.viewer-btn::after,
-.status-retry::after {
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .bar-year, .drift-year, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::after {
   right: var(--mark-gap);
   bottom: var(--mark-gap);
   border-right-width: 1.5px;
   border-bottom-width: 1.5px;
 }
 :focus-visible { outline: none; }
-.tile:focus-visible::before,
-.cover-btn:focus-visible::before,
-.drift-tile:focus-visible::before,
-.bar-year:focus-visible::before,
-.drift-year:focus-visible::before,
-.viewer-btn:focus-visible::before,
-.status-retry:focus-visible::before,
-.tile:focus-visible::after,
-.cover-btn:focus-visible::after,
-.drift-tile:focus-visible::after,
-.bar-year:focus-visible::after,
-.drift-year:focus-visible::after,
-.viewer-btn:focus-visible::after,
-.status-retry:focus-visible::after { opacity: 1; }
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .bar-year, .drift-year, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch):focus-visible::before,
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .bar-year, .drift-year, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch):focus-visible::after { opacity: 1; }
 .viewer:focus,
-.viewer:focus-visible { outline: none; }
+.viewer:focus-visible,
+.chooser:focus,
+.chooser:focus-visible { outline: none; }
 
 /* ---- 動く一覧での年（v11） --------------------------------------------------------
    上部のバーは出さず、年の文字を写真と同じように散らす。キーボードで年のタブへ移ったときだけバーを出す */
@@ -729,7 +692,7 @@ html[data-mode="drift"] .site-bar:focus-within {
   background: none;
   color: var(--ink);
   font-family: var(--latin);
-  font-size: 16px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   cursor: inherit;
 }
@@ -742,6 +705,191 @@ html[data-mode="drift"] .site-bar:focus-within {
   .drift-year:not(.is-current):hover { opacity: 0.55; }
 }
 
+/* ---- 見せ方（パターン）を選び直すボタン（v12） ------------------------------------------- */
+.pattern-switch {
+  margin: 0;
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  letter-spacing: 0.04em;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+.pattern-switch[hidden] { display: none; }
+html[data-mode="drift"] .site-meta { justify-content: flex-start; }
+html[data-mode="drift"] .site-meta .pattern-switch {
+  margin-left: auto;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.92);
+  pointer-events: auto;
+}
+
+/* ---- 最初に見せ方を選ぶ画面（v12） --------------------------------------------------- */
+html[data-mode="choose"] .site-bar,
+html[data-mode="choose"] .site-meta,
+html[data-mode="choose"] .cover,
+html[data-mode="choose"] .grid-panel { visibility: hidden; }
+
+.chooser {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--bg);
+  color: var(--ink);
+}
+.chooser::backdrop { background: var(--bg); }
+.chooser:not([open]) { display: none; }
+.chooser[open] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chooser-inner {
+  width: min(520px, calc(100% - 2 * var(--side)));
+  padding: max(24px, env(safe-area-inset-top)) 0 max(24px, env(safe-area-inset-bottom));
+}
+.chooser-title {
+  margin: 0 0 18px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.chooser-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chooser-opt {
+  display: grid;
+  grid-template-columns: 16px 72px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 16px;
+  row-gap: 4px;
+  align-items: center;
+  width: 100%;
+  min-height: 72px;
+  padding: 12px 10px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chooser-no { grid-row: 1 / 3; font-size: 12px; }
+.chooser-fig {
+  grid-row: 1 / 3;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+.chooser-name { align-self: end; font-size: 13px; letter-spacing: 0.06em; }
+.chooser-note { align-self: start; font-size: 10px; letter-spacing: 0.04em; }
+.chooser-opt.is-last .chooser-name {
+  text-decoration: underline; /* 前回選んだもの */
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+@media (hover: hover) {
+  .chooser-opt:hover .chooser-name {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
+  }
+}
+
+/* ---- パターン2: 列（v12。Codrops「Elastic Grid Scroll」の考え方） ---------------------------
+   年・枚数は一覧の上に左寄せで並べ、写真は 4:5 の枠で列に並べる。列の遅れは app.js が transform で付ける */
+.elastic { display: none; }
+html[data-mode="elastic"] .cover,
+html[data-mode="elastic"] .grid,
+html[data-mode="elastic"] .grid-sentinel,
+html[data-mode="elastic"] .drift { display: none; }
+html[data-mode="elastic"] .elastic { display: block; }
+html[data-mode="elastic"] .grid-panel {
+  max-width: none;
+  padding: 0;
+}
+html[data-mode="elastic"] .site-bar {
+  position: relative;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html[data-mode="elastic"] .bar-inner {
+  justify-content: flex-start;
+  max-width: none;
+  min-height: 0;
+  padding: 28px 5vw 0;
+}
+html[data-mode="elastic"] .bar-nav { margin-left: 0; }
+html[data-mode="elastic"] .bar-years { gap: 14px; }
+html[data-mode="elastic"] .bar-year { min-width: 0; padding: 4px 2px; }
+html[data-mode="elastic"] .site-meta {
+  justify-content: flex-start;
+  gap: 18px;
+  max-width: none;
+  padding: 2px 5vw 0;
+}
+
+.eg-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--eg-cols, 3), minmax(0, 1fr));
+  column-gap: 5vw;
+  align-items: start;
+  padding: 88px 5vw 140px;
+}
+.eg-col {
+  display: flex;
+  flex-direction: column;
+  gap: 5vw;
+  min-width: 0;
+  will-change: transform;
+}
+.eg-item { margin: 0; min-width: 0; }
+.eg-tile {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 128 / 160;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--tile);
+  cursor: zoom-in;
+}
+.eg-tile img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.eg-tile.is-broken img { visibility: hidden; }
+.eg-cap {
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-family: var(--latin);
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* ---- 広い画面 ------------------------------------------------------------- */
 /* 横向きのスマホ（幅 640px 以上）から3列。2列だと1枚が画面の高さを超えるため */
 @media (min-width: 640px) {
@@ -751,12 +899,12 @@ html[data-mode="drift"] .site-bar:focus-within {
 @media (min-width: 760px) {
   :root { --side: 32px; --col-gap: 20px; --row-gap: 40px; }
   .bar-inner { min-height: 72px; }
-  .bar-year { font-size: 13px; padding: 4px 8px; }
+  .bar-year { font-size: 12px; padding: 4px 8px; }
   .cover { padding: 48px var(--side); }
-  .site-meta { font-size: 13px; }
+  .site-meta { font-size: 11px; }
   .grid-panel { padding-top: 28px; padding-bottom: 120px; }
   .viewer-bar { padding: 18px 20px 0 32px; }
-  .viewer-no { font-size: 26px; }
+  .viewer-no { font-size: 18px; }
   .viewer-stage { padding: 20px 72px; }
   .viewer-foot {
     grid-template-columns: 44px auto 44px;

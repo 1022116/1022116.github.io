@@ -1,5 +1,5 @@
 /*
- * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v11 / 版 11.0）
+ * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v12 / 版 12.0）
  * HTML / CSS / Vanilla JavaScript のみ。外部CDN・ライブラリなし。URLはすべて相対（GitHub Pages のサブパスで動作）。
  *
  * ■ 状態保存と再読込の仕様
@@ -42,6 +42,16 @@
  *       上部のバー（年のタブ）は見えないようにし、キーボードでフォーカスしたときだけ出す（Tab で年を選べるように）。
  *       散らした年の文字は読み上げ・Tab の対象にしない（同じ内容を上部のバーの年のタブで読み上げる）。
  *   - 動かない一覧では、上部のバーの右側に年を並べる（v10 までと同じ）。
+ *
+ * ■ 見せ方のパターン（v12）
+ *   - 開いたときに「表示を選ぶ」画面で選ぶ。パターン1 = 散らばる（動く一覧、data-mode="drift"）、
+ *       パターン2 = 列（data-mode="elastic"。Codrops の作例「Elastic Grid Scroll」の動きの考え方を参考に書いたもの）。
+ *       選んだパターンは sessionStorage「pv:pattern」に保存し、同じタブの再読込・戻る操作では選ぶ画面を出さない。
+ *       前回選んだものは localStorage「pv:patternLast」に覚えておき、選ぶ画面で最初に選ばれた状態にする。
+ *       画面の「表示を選ぶ」からいつでも選び直せる。視差効果を減らす設定のときは選ぶ画面を出さず、動かない一覧にする。
+ *   - パターン2 … 写真を 4:5 の枠で列に並べる（幅 910px 未満は3列、以上は7列）。ページは普通にスクロールし、
+ *       各列はスクロールに遅れてついてくる（中央の列 0.5 秒、外側へ1列ごとに 0.1 秒ずつ遅い）。止まるとそろう。
+ *       年・枚数・「表示を選ぶ」は一覧の上に並べる。スクロール位置は sessionStorage「pv:elastic」に保存する。
  */
 (function () {
   'use strict';
@@ -57,7 +67,18 @@
     coverMaxHeight: 'min(64vh, 820px)', // css/style.css の .cover-btn と同じ値
     fontWait: 1500
   });
-  var KEYS = Object.freeze({ year: 'pv:selectedYear', scroll: 'pv:scroll', drift: 'pv:drift' });
+  var KEYS = Object.freeze({
+    year: 'pv:selectedYear', scroll: 'pv:scroll', drift: 'pv:drift',
+    pattern: 'pv:pattern', patternLast: 'pv:patternLast', elastic: 'pv:elastic'
+  });
+  var PATTERNS = ['1', '2']; // 1 = 散らばる（drift）、2 = 列（elastic）
+  // パターン2の動き方（v12）
+  var ELASTIC = Object.freeze({
+    baseLag: 0.5,   // 中央の列が追いつくまでの秒数
+    lagScale: 0.1,  // 外側へ1列ごとに足す秒数
+    wide: 910,      // この幅から7列（それより狭いと3列）
+    saveDelay: 200
+  });
   // 動く一覧の動き方（v10）
   var DRIFT = Object.freeze({
     ease: 0.075,       // 1フレーム（60fps 換算）で目標の位置に近づく割合。小さいほどゆっくり滑らか
@@ -108,7 +129,10 @@
     drift: $('drift'),
     driftList: $('drift-list'),
     driftCopies: $('drift-copies'),
-    driftYears: $('drift-years')
+    driftYears: $('drift-years'),
+    elastic: $('elastic'),
+    chooser: $('chooser'),
+    patternSwitch: $('pattern-switch')
   };
 
   var state = {
@@ -134,7 +158,8 @@
     restoring: false,
     observer: null,
     developObserver: null,
-    mode: null,          // 'drift'（動く一覧）| 'still'（動かない一覧）
+    mode: null,          // 'drift'（パターン1）| 'elastic'（パターン2）| 'still'（動かない一覧）| 'choose'（選ぶ画面）
+    pattern: null,       // 選んだパターン '1' | '2'（未選択は null）
     viewOpened: -1,      // 全画面表示を開いたときの写真の番号（動く一覧で、閉じたときに画面を動かすかの判断に使う）
     viewByKey: false     // キーボードで開いたか
   };
@@ -439,6 +464,15 @@
       saveScrollNow();
       return;
     }
+    if (state.mode === 'elastic') {
+      // パターン2: 年は一覧の上にあるので、新しい年の一覧を上から見せる
+      if (changed) {
+        renderList({ restore: false });
+        if (!(opts && opts.keepScroll)) window.scrollTo(0, 0);
+      }
+      saveScrollNow();
+      return;
+    }
     if (changed) renderList();
     // 選んだ年の写真がすぐ見えるよう、表紙の下の一覧の先頭へ（矢印キーで年を移動中は動かさない）
     if (!(opts && opts.keepScroll)) window.scrollTo(0, listTop());
@@ -602,14 +636,17 @@
   function renderList(opts) {
     state.list = state.photos.filter(function (p) { return p.year === state.year; });
     updateCount();
-    if (state.mode === 'drift') {
+    if (state.mode === 'drift' || state.mode === 'elastic' || state.mode === 'choose') {
       clearGrid();
-      el.cover.hidden = true; // 動く一覧では表紙を出さない（v10）
+      el.cover.hidden = true; // 動く見せ方では表紙を出さない（v10）
       el.sentinel.hidden = true;
       if (state.observer) state.observer.disconnect();
-      driftBuild({ restore: !!(opts && opts.restore) });
+      if (state.mode === 'drift') { elasticClear(); driftBuild({ restore: !!(opts && opts.restore) }); }
+      else if (state.mode === 'elastic') { driftClear(); elasticBuild({ restore: !!(opts && opts.restore) }); }
+      else { driftClear(); elasticClear(); } // 選ぶ画面の間は一覧を作らない
     } else {
       driftClear();
+      elasticClear();
       renderGrid();
     }
   }
@@ -683,6 +720,8 @@
     cancelPendingSave();
     if (!state.ready || state.restoring) return;
     if (state.mode === 'drift') { driftSaveNow(); return; }
+    if (state.mode === 'elastic') { elasticSaveNow(); return; }
+    if (state.mode !== 'still') return;
     storageSet('sessionStorage', KEYS.scroll, JSON.stringify(captureScroll()));
   }
 
@@ -1307,9 +1346,176 @@
     }, 150);
   });
 
-  // ---------------------------------------------------------------- 見せ方の切り替え（視差効果を減らす設定）
+  // ---------------------------------------------------------------- パターン2: 列（v12）
+  var elastic = { cols: [], raf: 0, last: 0, count: 0, saveTimer: 0, restoring: false };
+
+  function elasticColumnCount() {
+    return window.innerWidth >= ELASTIC.wide ? 7 : 3;
+  }
+
+  function elasticClear() {
+    if (elastic.raf) cancelAnimationFrame(elastic.raf);
+    elastic.raf = 0;
+    elastic.last = 0;
+    elastic.cols = [];
+    elastic.count = 0;
+    if (elastic.saveTimer) clearTimeout(elastic.saveTimer);
+    elastic.saveTimer = 0;
+    if (el.elastic) {
+      if (state.developObserver) {
+        Array.prototype.forEach.call(el.elastic.querySelectorAll('.eg-tile:not(.is-developed)'), function (b) {
+          state.developObserver.unobserve(b);
+        });
+      }
+      el.elastic.textContent = '';
+      el.elastic.removeAttribute('data-moving');
+    }
+  }
+
+  function makeElasticItem(p, i) {
+    var fig = document.createElement('figure');
+    fig.className = 'eg-item';
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'eg-tile';
+    b.setAttribute('data-index', String(i));
+    b.setAttribute('data-id', p.id);
+    var img = document.createElement('img');
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.draggable = false;
+    img.alt = p.alt;
+    img.addEventListener('load', function () { markLoaded(b); });
+    img.addEventListener('error', function () { b.classList.add('is-broken'); markLoaded(b); });
+    img.src = p.mid || p.src;
+    watchDevelop(b);
+    var fb = document.createElement('span');
+    fb.className = 'tile-fallback';
+    fb.setAttribute('aria-hidden', 'true');
+    fb.textContent = '表示できません';
+    b.appendChild(img);
+    b.appendChild(fb);
+    var cap = document.createElement('figcaption');
+    cap.className = 'eg-cap';
+    cap.setAttribute('aria-hidden', 'true'); // 読み上げは写真の代替テキスト（撮影日時）で行う
+    cap.textContent = 'No. ' + formatNo(p.no) + ' - ' + formatDot(p.ms);
+    fig.appendChild(b);
+    fig.appendChild(cap);
+    return fig;
+  }
+
+  // 写真を列に分けて並べる（i 番目の写真は i % 列数 の列へ。横に読むと新しい順）
+  function elasticBuild(opts) {
+    elasticClear();
+    if (!el.elastic || !state.list.length) return;
+    var n = elasticColumnCount();
+    var mid = (n - 1) / 2;
+    var y = window.pageYOffset || 0;
+    var wrap = document.createElement('div');
+    wrap.className = 'eg-grid';
+    wrap.style.setProperty('--eg-cols', String(n));
+    for (var i = 0; i < n; i++) {
+      var col = document.createElement('div');
+      col.className = 'eg-col';
+      // 中央の列ほど早く、外側の列ほど遅れてついてくる
+      elastic.cols.push({ el: col, lag: ELASTIC.baseLag + Math.abs(i - mid) * ELASTIC.lagScale, y: y, shown: 0 });
+      wrap.appendChild(col);
+    }
+    state.list.forEach(function (p, k) { elastic.cols[k % n].el.appendChild(makeElasticItem(p, k)); });
+    el.elastic.setAttribute('aria-label', state.year + '年の写真');
+    el.elastic.appendChild(wrap);
+    elastic.count = n;
+    if (opts && opts.restore) elasticRestore();
+    elastic.cols.forEach(function (c) { c.y = window.pageYOffset || 0; });
+  }
+
+  function elasticKick() {
+    if (!elastic.raf && elastic.cols.length) {
+      el.elastic.setAttribute('data-moving', '1');
+      elastic.raf = requestAnimationFrame(elasticFrame);
+    }
+  }
+
+  function elasticFrame(now) {
+    elastic.raf = 0;
+    var dt = elastic.last ? Math.min(64, Math.max(1, now - elastic.last)) : 16.67;
+    elastic.last = now;
+    var y = window.pageYOffset || 0;
+    var moving = false;
+    elastic.cols.forEach(function (c) {
+      // 列は lag 秒ほどかけて、いまのスクロール位置に追いつく
+      c.y += (y - c.y) * (1 - Math.exp(-dt / (c.lag * 1000 / 3)));
+      if (Math.abs(y - c.y) < 0.3) c.y = y;
+      else moving = true;
+      var off = Math.round((y - c.y) * 10) / 10;
+      if (off !== c.shown) {
+        c.el.style.transform = off ? 'translate3d(0,' + off + 'px,0)' : '';
+        c.shown = off;
+      }
+    });
+    if (moving) {
+      elastic.raf = requestAnimationFrame(elasticFrame);
+    } else {
+      elastic.last = 0;
+      el.elastic.removeAttribute('data-moving');
+    }
+  }
+
+  window.addEventListener('scroll', function () {
+    if (state.mode !== 'elastic' || !elastic.cols.length) return;
+    elasticKick();
+    if (state.open || elastic.restoring) return;
+    if (elastic.saveTimer) clearTimeout(elastic.saveTimer);
+    elastic.saveTimer = setTimeout(elasticSaveNow, ELASTIC.saveDelay);
+  }, { passive: true });
+
+  window.addEventListener('resize', function () {
+    if (state.mode !== 'elastic' || !elastic.cols.length) return;
+    if (elasticColumnCount() !== elastic.count) elasticBuild({ restore: false }); // 列の数が変わったときだけ並べ直す
+  });
+
+  function elasticSaveNow() {
+    if (elastic.saveTimer) clearTimeout(elastic.saveTimer);
+    elastic.saveTimer = 0;
+    if (state.mode !== 'elastic' || !state.ready || elastic.restoring) return;
+    storageSet('sessionStorage', KEYS.elastic, JSON.stringify({ v: 1, year: String(state.year), y: Math.round(window.pageYOffset || 0) }));
+  }
+
+  function elasticRestore() {
+    var raw = storageGet('sessionStorage', KEYS.elastic);
+    if (!raw) return;
+    var s;
+    try { s = JSON.parse(raw); } catch (e) { storageRemove('sessionStorage', KEYS.elastic); return; }
+    if (!s || s.v !== 1 || s.year !== String(state.year) || !(s.y > 0)) return;
+    elastic.restoring = true;
+    window.scrollTo(0, s.y);
+    requestAnimationFrame(function () { requestAnimationFrame(function () { elastic.restoring = false; }); });
+  }
+
+  function elasticFocus(index) {
+    var b = el.elastic ? el.elastic.querySelector('.eg-tile[data-index="' + index + '"]') : null;
+    if (!b) return;
+    b.focus({ preventScroll: true });
+    var r = b.getBoundingClientRect();
+    if (r.top < 0 || r.bottom > window.innerHeight) b.scrollIntoView({ block: 'center' });
+  }
+
+  if (el.elastic) {
+    el.elastic.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.eg-tile') : null;
+      if (b && state.mode === 'elastic') openViewer(Number(b.getAttribute('data-index')), { from: 'elastic' });
+    });
+  }
+
+  // ---------------------------------------------------------------- 見せ方の切り替え（パターン・視差効果を減らす設定）
+  function wantedMode() {
+    if (motionQuery && motionQuery.matches) return 'still';
+    if (!state.pattern) return 'choose';
+    return state.pattern === '2' ? 'elastic' : 'drift';
+  }
+
   function applyMode() {
-    var mode = (motionQuery && motionQuery.matches) ? 'still' : 'drift';
+    var mode = wantedMode();
     if (mode === state.mode) return;
     var first = state.mode === null;
     if (!first) {
@@ -1318,10 +1524,79 @@
     }
     state.mode = mode;
     document.documentElement.setAttribute('data-mode', mode);
+    if (el.patternSwitch) el.patternSwitch.hidden = !(mode === 'drift' || mode === 'elastic');
+    if (mode === 'choose') openChooser();
+    else closeChooser();
     if (!first && state.ready) {
+      window.scrollTo(0, 0);
       renderList({ restore: true });
-      if (mode === 'still') window.scrollTo(0, 0);
     }
+  }
+
+  function openChooser() {
+    var d = el.chooser;
+    if (!d || d.open) return;
+    var last = storageGet('localStorage', KEYS.patternLast);
+    var opts = d.querySelectorAll('.chooser-opt');
+    Array.prototype.forEach.call(opts, function (b) {
+      b.classList.toggle('is-last', b.getAttribute('data-pattern') === last);
+    });
+    try {
+      if (typeof d.showModal === 'function') d.showModal();
+      else d.setAttribute('open', '');
+    } catch (e) {
+      d.setAttribute('open', '');
+    }
+    var focus = d.querySelector('.chooser-opt.is-last') || opts[0];
+    if (focus) focus.focus({ preventScroll: true });
+  }
+
+  function closeChooser() {
+    var d = el.chooser;
+    if (!d || !(d.open || d.hasAttribute('open'))) return;
+    try {
+      if (typeof d.close === 'function') d.close();
+      else d.removeAttribute('open');
+    } catch (e) {
+      d.removeAttribute('open');
+    }
+  }
+
+  function choosePattern(p) {
+    if (PATTERNS.indexOf(p) < 0) return;
+    state.pattern = p;
+    storageSet('sessionStorage', KEYS.pattern, p);
+    storageSet('localStorage', KEYS.patternLast, p);
+    storageRemove('sessionStorage', KEYS.drift); // 選び直したときは最初の位置から（広がる動きも見せる）
+    storageRemove('sessionStorage', KEYS.elastic);
+    applyMode();
+  }
+
+  if (el.chooser) {
+    el.chooser.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.chooser-opt') : null;
+      if (b) choosePattern(b.getAttribute('data-pattern'));
+    });
+    var chooseDefault = function () { // 前回のパターン（初めてなら1）で見る
+      var last = storageGet('localStorage', KEYS.patternLast);
+      choosePattern(PATTERNS.indexOf(last) >= 0 ? last : '1');
+    };
+    el.chooser.addEventListener('cancel', function (e) { // Escape
+      e.preventDefault();
+      chooseDefault();
+    });
+    el.chooser.addEventListener('close', function () { // ほかの経路で閉じられたときも一覧が空のままにならないように
+      if (state.mode === 'choose') chooseDefault();
+    });
+  }
+  if (el.patternSwitch) {
+    el.patternSwitch.addEventListener('click', function () {
+      if (state.mode !== 'drift' && state.mode !== 'elastic') return;
+      saveScrollNow();
+      state.pattern = null;
+      storageRemove('sessionStorage', KEYS.pattern);
+      applyMode();
+    });
   }
 
   // ---------------------------------------------------------------- 全画面スライド（S-07）
@@ -1380,6 +1655,7 @@
       // 動く一覧: 開いた写真のまま閉じたときは画面を動かさない（タップした複製の位置のまま）。
       // キーボードで開いた・別の写真へ送ったときは、その写真が見える所まで動かす
       else if (state.mode === 'drift') driftFocus(state.index, state.viewByKey || state.index !== state.viewOpened);
+      else if (state.mode === 'elastic') elasticFocus(state.index);
       else focusTile(state.index);
     }
   }
@@ -1554,6 +1830,10 @@
 
   // ---------------------------------------------------------------- 起動
   el.retry.addEventListener('click', function () { load(); });
+  (function () {
+    var saved = storageGet('sessionStorage', KEYS.pattern); // 同じタブでは選んだパターンのまま
+    if (PATTERNS.indexOf(saved) >= 0) state.pattern = saved;
+  })();
   applyMode();
   if (motionQuery) {
     if (motionQuery.addEventListener) motionQuery.addEventListener('change', applyMode);
