@@ -1,15 +1,17 @@
-/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v10 / 版 10.0）
+/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v11 / 版 11.0）
    S-05: 一覧（v10 で変更）
          ・動く一覧（html[data-mode="drift"]。ふだん）… 元の縦横比の写真を大小ばらばらに、終わりのない平面へ散らす。
            スクロール・ドラッグで写真ごとに違う速さで動く（動きは app.js、見た目はこのファイルの「動く一覧」）
          ・動かない一覧（html[data-mode="still"]。視差効果を減らす設定のとき）… v9 までのポートフォリオ型一覧
            （正方形をスマホ2列・幅640px以上で3列、番号と撮影日を添える。
            表紙の写真（config.json の coverPhoto、未指定は最新）を上部バーの下に中央へ大きく）
-   S-06: 写真のある年だけを新しい順に（v7 で「すべて」を廃止）。上部バー右側の小さな年（タブ）から選ぶ（スクロールしても上に残る）
+   S-06: 写真のある年だけを新しい順に（v7 で「すべて」を廃止）。動く一覧では年の文字を写真と同じように散らす（v11）。
+         動かない一覧では上部バー右側の小さな年（タブ）から選ぶ（スクロールしても上に残る）
+   v11: サイト名は画面に出さない。選んだもの（フォーカス）の印は青い枠ではなく黒いかぎ「 」
    S-07: 全画面スライド／reduced-motion 対応
 
    デザイン: 「作品目録」— 写真を作品として扱い、一枚ずつに目録番号（古い順の通し番号）を振る。
-   ・名前と年は上部バーに小さく置き、写真をいちばん大きく見せる
+   ・写真をいちばん大きく見せる（v11 からサイト名は出さず、年も写真のあいだに散らす）
    ・情報は小さな文字で左右に振り分け、線や箱で区切らず余白で区切る
    ・白い紙に黒い手書き文字で書き添えるように見せる
    ・全画面表示は白い壁に一枚を掛けるように見せ、操作は写真の下にまとめる
@@ -34,7 +36,6 @@
   --ink: #000000;
   --muted: #9a9a9a; /* 読込中の輪だけに使う（文字には使わない） */
   --tile: #f0f0ef;  /* 読込前の写真の場所（ごく薄い灰色） */
-  --focus: #2f6feb;
   --bar: rgba(255, 255, 255, 0.94);
   --side: 16px;
   --col-gap: 12px;
@@ -113,41 +114,7 @@ button {
   padding: 6px max(var(--side), env(safe-area-inset-right)) 6px max(var(--side), env(safe-area-inset-left));
 }
 
-.app-title {
-  flex: 0 0 auto;
-  margin: 0;
-  font-family: var(--latin);
-  font-size: 22px;
-  font-weight: 400;
-  line-height: 1.2;
-  letter-spacing: 0;
-  white-space: nowrap;
-}
-/* サイト名を書き順で描く（index.html の template#title-art。app.js が is-drawing / is-drawn を付ける） */
-.app-title.has-art { display: flex; align-items: center; }
-.title-art {
-  display: block;
-  height: 0.9em;
-  width: auto;
-  overflow: visible;
-  color: var(--ink);
-}
-.title-art .stroke {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 120;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-dasharray: var(--len) var(--len);
-  stroke-dashoffset: var(--len);
-}
-.title-art .ink-full { fill: currentColor; opacity: 0; }
-.title-art.is-drawing .stroke { animation: pv-write var(--dur) cubic-bezier(0.42, 0, 0.38, 1) var(--delay) forwards; }
-.title-art.is-drawing .ink-full { animation: pv-ink 0.3s ease var(--delay) forwards; }
-.title-art.is-drawn .stroke { stroke-dashoffset: 0; }
-.title-art.is-drawn .ink-full { opacity: 1; }
-@keyframes pv-write { to { stroke-dashoffset: 0; } }
-@keyframes pv-ink { to { opacity: 1; } }
+/* サイト名は画面に出さない（v11。読み上げとブラウザーのタブの名前にだけ使う。index.html で visually-hidden） */
 
 .visually-hidden {
   position: absolute;
@@ -159,12 +126,6 @@ button {
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
-}
-
-.app-title.is-ja {
-  font-family: var(--ja);
-  font-size: 19px;
-  letter-spacing: 0.06em;
 }
 
 .bar-years {
@@ -199,8 +160,7 @@ button {
 @media (hover: hover) {
   .bar-year:not([aria-selected="true"]):hover { opacity: 0.55; }
 }
-.bar-year:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-.bar-nav { min-width: 0; }
+.bar-nav { min-width: 0; margin-left: auto; } /* 年は右に寄せる */
 
 /* 枚数とその年の範囲（表紙と写真のあいだに小さく） */
 .site-meta {
@@ -243,7 +203,6 @@ button {
   color: var(--ink);
   cursor: pointer;
 }
-.status-retry:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 
 .spinner {
   display: inline-block;
@@ -277,7 +236,6 @@ button {
   padding: 0;
   border: 0;
   background: var(--tile);
-  overflow: hidden;
   cursor: zoom-in;
 }
 .cover-img {
@@ -290,7 +248,6 @@ button {
   object-fit: cover;
 }
 .cover-btn.is-broken .cover-img { visibility: hidden; }
-.cover-btn:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 
 /* ---- ポートフォリオ型一覧（S-05） -------------------------------------------- */
 .grid-panel {
@@ -325,7 +282,6 @@ button {
   border: 0;
   border-radius: 0;
   background: var(--tile);
-  overflow: hidden;
   cursor: zoom-in;
 }
 @supports not (aspect-ratio: 1 / 1) {
@@ -348,6 +304,7 @@ button {
 .tile img,
 .cover-img,
 .drift-tile img {
+  clip-path: inset(0); /* ぼかしが写真の外へにじまないように（ボタンは「」の印を外側に出すため切り抜かない） */
   opacity: 0;
   filter: blur(7px) sepia(0.55) brightness(1.18) contrast(0.82);
   transition: opacity 1s ease-out, filter 1.8s cubic-bezier(0.2, 0.6, 0.3, 1);
@@ -365,10 +322,6 @@ button {
   .cover-btn.is-developed:hover .cover-img { opacity: 0.92; transition-duration: 0.25s; transition-delay: 0s; }
 }
 
-.tile:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 3px;
-}
 
 /* 番号と撮影日 */
 .tile-cap {
@@ -476,7 +429,6 @@ button {
   transition: opacity 0.2s ease;
 }
 .viewer-close { align-self: center; }
-.viewer-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; }
 @media (hover: hover) {
   .viewer-btn:not(:disabled):hover { opacity: 0.55; }
 }
@@ -603,7 +555,6 @@ html[data-mode="drift"] .drift {
   border: 0;
   border-radius: 0;
   background: var(--tile);
-  overflow: hidden;
   cursor: inherit;
 }
 .drift-tile img {
@@ -618,7 +569,6 @@ html[data-mode="drift"] .drift {
   -webkit-user-drag: none;
 }
 .drift-tile.is-broken img { visibility: hidden; }
-.drift-tile:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 
 /* 番号と撮影日。写真が画面に入るたびに、1行ずつ下から現れる（app.js が is-in を付ける） */
 .drift-cap {
@@ -658,6 +608,140 @@ html[data-mode="drift"] .site-meta > span:not(:empty) {
   background: rgba(255, 255, 255, 0.92);
 }
 
+/* ---- 選んだものの印「」（v11。キーボードの Tab や、全画面表示を閉じたときに戻る場所） ------------------
+   青い枠の代わりに、左上と右下に黒いかぎ（「 」）を付ける。写真は外側に大きめ、文字やボタンは小さめ */
+.tile,
+.cover-btn,
+.drift-tile,
+.bar-year,
+.drift-year,
+.viewer-btn,
+.status-retry {
+  --mark-size: 9px;
+  --mark-gap: -2px;
+  position: relative;
+}
+.tile,
+.cover-btn,
+.drift-tile {
+  --mark-size: 16px;
+  --mark-gap: -8px;
+}
+/* 上部のバーの年は横スクロールの枠の中にあるので、印をボタンの内側（文字の外側）に付ける */
+.bar-year {
+  --mark-size: 8px;
+  --mark-gap: 5px;
+}
+.tile::before,
+.cover-btn::before,
+.drift-tile::before,
+.bar-year::before,
+.drift-year::before,
+.viewer-btn::before,
+.status-retry::before,
+.tile::after,
+.cover-btn::after,
+.drift-tile::after,
+.bar-year::after,
+.drift-year::after,
+.viewer-btn::after,
+.status-retry::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  width: var(--mark-size);
+  height: var(--mark-size);
+  border: 0 solid var(--ink);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.tile::before,
+.cover-btn::before,
+.drift-tile::before,
+.bar-year::before,
+.drift-year::before,
+.viewer-btn::before,
+.status-retry::before {
+  top: var(--mark-gap);
+  left: var(--mark-gap);
+  border-top-width: 1.5px;
+  border-left-width: 1.5px;
+}
+.tile::after,
+.cover-btn::after,
+.drift-tile::after,
+.bar-year::after,
+.drift-year::after,
+.viewer-btn::after,
+.status-retry::after {
+  right: var(--mark-gap);
+  bottom: var(--mark-gap);
+  border-right-width: 1.5px;
+  border-bottom-width: 1.5px;
+}
+:focus-visible { outline: none; }
+.tile:focus-visible::before,
+.cover-btn:focus-visible::before,
+.drift-tile:focus-visible::before,
+.bar-year:focus-visible::before,
+.drift-year:focus-visible::before,
+.viewer-btn:focus-visible::before,
+.status-retry:focus-visible::before,
+.tile:focus-visible::after,
+.cover-btn:focus-visible::after,
+.drift-tile:focus-visible::after,
+.bar-year:focus-visible::after,
+.drift-year:focus-visible::after,
+.viewer-btn:focus-visible::after,
+.status-retry:focus-visible::after { opacity: 1; }
+.viewer:focus,
+.viewer:focus-visible { outline: none; }
+
+/* ---- 動く一覧での年（v11） --------------------------------------------------------
+   上部のバーは出さず、年の文字を写真と同じように散らす。キーボードで年のタブへ移ったときだけバーを出す */
+html[data-mode="drift"] .site-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  opacity: 0;
+  pointer-events: none;
+}
+html[data-mode="drift"] .site-bar:focus-within {
+  background: var(--bar);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.drift-year {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-family: var(--latin);
+  font-size: 16px;
+  letter-spacing: 0.06em;
+  cursor: inherit;
+}
+.drift-year.is-current {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 6px;
+}
+@media (hover: hover) {
+  .drift-year:not(.is-current):hover { opacity: 0.55; }
+}
+
 /* ---- 広い画面 ------------------------------------------------------------- */
 /* 横向きのスマホ（幅 640px 以上）から3列。2列だと1枚が画面の高さを超えるため */
 @media (min-width: 640px) {
@@ -667,7 +751,6 @@ html[data-mode="drift"] .site-meta > span:not(:empty) {
 @media (min-width: 760px) {
   :root { --side: 32px; --col-gap: 20px; --row-gap: 40px; }
   .bar-inner { min-height: 72px; }
-  .app-title { font-size: 26px; }
   .bar-year { font-size: 13px; padding: 4px 8px; }
   .cover { padding: 48px var(--side); }
   .site-meta { font-size: 13px; }
@@ -701,6 +784,4 @@ html[data-mode="drift"] .site-meta > span:not(:empty) {
   /* 現像・書き順は動かさず、最初から仕上がった状態で見せる */
   .tile img,
   .cover-img { filter: none !important; transition-delay: 0s !important; }
-  .title-art .stroke { animation: none !important; stroke-dashoffset: 0; }
-  .title-art .ink-full { animation: none !important; opacity: 1; }
 }

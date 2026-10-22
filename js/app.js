@@ -1,5 +1,5 @@
 /*
- * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v10 / 版 10.0）
+ * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v11 / 版 11.0）
  * HTML / CSS / Vanilla JavaScript のみ。外部CDN・ライブラリなし。URLはすべて相対（GitHub Pages のサブパスで動作）。
  *
  * ■ 状態保存と再読込の仕様
@@ -20,8 +20,7 @@
  * ■ 演出（v8）
  *   - 現像 … 一覧と表紙の写真は「読み込み済み」かつ「画面に入った」ときに is-developed を付け、
  *       白くぼやけた像から色と輪郭が浮かぶように表示する（css/style.css）。視差効果を減らす設定では動かさない。
- *   - タイトル … サイト名が index.html の書き順データ（template#title-art）と同じとき、書き順どおりに描く。
- *       タブを開いて最初の1回だけ再生し、再読込・戻る操作では描き終わった状態で表示する。
+ *   （v8 のサイト名の書き順は v11 で廃止。サイト名は画面に出さず、読み上げとブラウザーのタブの名前にだけ使う）
  *   （v8 の小話は v9 で廃止。photos.json に story があっても表示しない）
  *
  * ■ 一覧の2つの見せ方（v10）
@@ -35,7 +34,14 @@
  *       位置は sessionStorage「pv:drift」に（年と、並び1周に対する割合で）保存し、同じタブの再読込・戻る操作で復元する
  *       （復元したときは広がる動きをしない）。
  *   - 動かない一覧（data-mode="still"）… 端末の「視差効果を減らす」設定がオンのとき。表紙と正方形の一覧を
- *       縦にスクロールする（v9 までと同じ）。現像・書き順も動かさない。設定を途中で変えると、その場で切り替わる。
+ *       縦にスクロールする（v9 までと同じ）。現像も動かさない。設定を途中で変えると、その場で切り替わる。
+ *
+ * ■ 年（v11）
+ *   - 動く一覧では、年の文字（2026・2025 …）も写真と同じように平面へ散らし、写真と同じ動きをさせる。
+ *       タップするとその年に切り替わる。選んでいる年には下線。だいたい1画面に1つ見える数を置く（年の数より少なくはしない）。
+ *       上部のバー（年のタブ）は見えないようにし、キーボードでフォーカスしたときだけ出す（Tab で年を選べるように）。
+ *       散らした年の文字は読み上げ・Tab の対象にしない（同じ内容を上部のバーの年のタブで読み上げる）。
+ *   - 動かない一覧では、上部のバーの右側に年を並べる（v10 までと同じ）。
  */
 (function () {
   'use strict';
@@ -51,7 +57,7 @@
     coverMaxHeight: 'min(64vh, 820px)', // css/style.css の .cover-btn と同じ値
     fontWait: 1500
   });
-  var KEYS = Object.freeze({ year: 'pv:selectedYear', scroll: 'pv:scroll', titleDrawn: 'pv:titleDrawn', drift: 'pv:drift' });
+  var KEYS = Object.freeze({ year: 'pv:selectedYear', scroll: 'pv:scroll', drift: 'pv:drift' });
   // 動く一覧の動き方（v10）
   var DRIFT = Object.freeze({
     ease: 0.075,       // 1フレーム（60fps 換算）で目標の位置に近づく割合。小さいほどゆっくり滑らか
@@ -62,7 +68,9 @@
     tap: 8,            // これより動いたらドラッグとみなす（タップで開かない）
     introDur: 2000,    // 中央から広がる時間
     introStagger: 50,  // 写真ごとの開始のずれ
-    caption: 40        // 写真の下の番号・日付の高さ（並べるときに空ける）
+    caption: 40,       // 写真の下の番号・日付の高さ（並べるときに空ける）
+    yearW: 72,         // 散らした年の文字の大きさ（押しやすい大きさ）
+    yearH: 44
   });
   var PATH_RE = /^(photos|thumbs|mids)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.webp$/;
   var ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -97,10 +105,10 @@
     prev: $('viewer-prev'),
     next: $('viewer-next'),
     caption: $('viewer-caption'),
-    titleArt: $('title-art'),
     drift: $('drift'),
     driftList: $('drift-list'),
-    driftCopies: $('drift-copies')
+    driftCopies: $('drift-copies'),
+    driftYears: $('drift-years')
   };
 
   var state = {
@@ -350,38 +358,9 @@
     });
   }
 
-  // ---------------------------------------------------------------- タイトル（書き順で描く）
-  function prefersReducedMotion() {
-    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  }
-
+  // ---------------------------------------------------------------- サイト名（画面には出さない。読み上げ用・v11）
   function renderTitle(title) {
-    var art = el.titleArt;
-    var useArt = !!(art && art.content && art.getAttribute('data-title') === title);
-    el.title.textContent = '';
-    el.title.classList.toggle('is-ja', /[\u3000-\u9fff\uff00-\uffef]/.test(title));
-    el.title.classList.toggle('has-art', useArt);
-    if (!useArt) {
-      el.title.textContent = title;
-      return;
-    }
-    // 読み上げ用の文字と、見た目の書き文字（SVG）
-    var label = document.createElement('span');
-    label.className = 'visually-hidden';
-    label.textContent = title;
-    el.title.appendChild(label);
-    var svg = art.content.firstElementChild.cloneNode(true);
-    el.title.appendChild(svg);
-    var drawn = storageGet('sessionStorage', KEYS.titleDrawn) === '1';
-    if (drawn || prefersReducedMotion()) {
-      svg.classList.add('is-drawn'); // 描き終わった状態で表示
-      return;
-    }
-    storageSet('sessionStorage', KEYS.titleDrawn, '1');
-    // 次の描画で書き始める（最初の状態を確実に描いてから線を伸ばす）
-    requestAnimationFrame(function () {
-      requestAnimationFrame(function () { svg.classList.add('is-drawing'); });
-    });
+    el.title.textContent = title;
   }
 
   function whenLayoutStable(fn) {
@@ -793,6 +772,7 @@
     drift.drag = null;
     if (el.driftList) el.driftList.textContent = '';
     if (el.driftCopies) el.driftCopies.textContent = '';
+    if (el.driftYears) el.driftYears.textContent = '';
     if (el.drift) {
       el.drift.classList.remove('is-dragging');
       el.drift.removeAttribute('data-intro');
@@ -843,8 +823,25 @@
     });
     item.appendChild(b);
     item.appendChild(cap);
-    return { el: item, btn: b, x: 0, y: 0, w: w, h: h, ease: 0.5 + seeded(p.id, 5) * 0.5, index: index, copy: copy,
-      near: false, visible: false, intro: null };
+    return { el: item, btn: b, x: 0, y: 0, w: w, h: h, cap: DRIFT.caption, ease: 0.5 + seeded(p.id, 5) * 0.5, index: index,
+      copy: copy, year: 0, near: false, visible: false, intro: null };
+  }
+
+  // 散らす年の文字（v11）。押すとその年に切り替わる。読み上げ・Tab は上部のバーの年のタブで行う
+  function makeDriftYear(year, ease) {
+    var item = document.createElement('div');
+    item.className = 'drift-item drift-year-item';
+    item.style.width = DRIFT.yearW + 'px';
+    item.style.transform = 'translate3d(-10000px,-10000px,0)';
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'drift-year' + (year === state.year ? ' is-current' : '');
+    b.tabIndex = -1;
+    b.setAttribute('data-year', String(year));
+    b.textContent = String(year);
+    item.appendChild(b);
+    return { el: item, btn: b, x: 0, y: 0, w: DRIFT.yearW, h: DRIFT.yearH, cap: 0, ease: ease, index: -1,
+      copy: true, year: year, near: false, visible: false, intro: null };
   }
 
   // 写真を並べる。1周分（block）は画面より少し広く、写真が少ないときは複製して画面より大きくする
@@ -855,15 +852,62 @@
     var vh = Math.max(1, window.innerHeight);
     drift.vw = vw;
     drift.vh = vh;
-    drift.top = headerBottom();
+    drift.top = 0; // 動く一覧では上部のバーを出さない（v11）ので、画面の上端まで使う
     if (!list.length || !el.drift) return;
     var compact = vw < 640;
     var cw = Math.round(compact ? vw * 0.5 : clamp(vw / 4.2, 230, 360));
     var ch = Math.round(cw * (compact ? 1.28 : 1.22));
-    var n = list.length;
+    // 写真と年の文字の置き場所（v11）。並び1周を「画面くらいの大きさの区画」に分け、
+    // 最初に見える区画には全部の年を、ほかの区画には年を1つずつ（新しい年から順に）置く。残りの枠に写真を新しい順に入れる
+    var years = state.years;
+    var nPhotos = list.length;
+    var visCols = Math.max(1, Math.floor(vw / cw));
+    var visRows = Math.max(1, Math.floor(vh / ch));
+    var winCols = visCols;
+    var winRows = visRows + 1;
+    // 最初に見える区画の枠のうち、いちばん新しい写真の枠（左上）と、ほかの写真の枠（半分ほど）を残して年を置く
+    var firstCells = visCols * visRows;
+    var firstPhotos = Math.min(Math.max(0, nPhotos - 1), Math.floor((firstCells - 1) / 2));
+    var firstCap = Math.max(0, Math.min(years.length, firstCells - 1 - firstPhotos));
     var minCols = Math.ceil(vw * 1.15 / cw);
-    var cols = Math.max(1, Math.min(n, Math.max(minCols, Math.round(Math.sqrt(n * (vw / vh) * (ch / cw))))));
-    var rows = Math.ceil(n / cols);
+    var nLabels = years.length;
+    var cols = 1, rows = 1;
+    for (var pass = 0; pass < 4; pass++) {
+      var n = nPhotos + nLabels;
+      cols = Math.max(1, Math.min(n, Math.max(minCols, Math.round(Math.sqrt(n * (vw / vh) * (ch / cw))))));
+      rows = Math.ceil(n / cols);
+      var windows = Math.ceil(cols / winCols) * Math.ceil(rows / winRows);
+      var want = Math.max(years.length, firstCap + windows - 1);
+      if (want === nLabels) break;
+      nLabels = want;
+    }
+    rows = Math.max(rows, Math.ceil((nPhotos + nLabels) / cols));
+    var yearCell = {};
+    var placed = 0;
+    var cycle = 0;
+    var winX = Math.ceil(cols / winCols);
+    var winY = Math.ceil(rows / winRows);
+    for (var wy = 0; wy < winY && placed < nLabels; wy++) {
+      for (var wx = 0; wx < winX && placed < nLabels; wx++) {
+        var first = wx === 0 && wy === 0;
+        var cand = [];
+        // 最初の区画は、最初に画面に見える範囲（visCols × visRows）から選ぶ
+        var rEnd = Math.min(rows, wy * winRows + (first ? visRows : winRows));
+        for (var rr = wy * winRows; rr < rEnd; rr++) {
+          for (var cc = wx * winCols; cc < Math.min(cols, (wx + 1) * winCols); cc++) {
+            if (rr === 0 && cc === 0) continue;
+            if (yearCell[rr * cols + cc] === undefined) cand.push(rr * cols + cc);
+          }
+        }
+        cand.sort(function (a, b) { return seeded('w' + a, 11) - seeded('w' + b, 11); }); // 区画の中の場所は毎回同じ乱数で
+        var take = first ? firstCap : 1;
+        for (var t = 0; t < take && t < cand.length && placed < nLabels; t++) {
+          yearCell[cand[t]] = years[cycle % years.length];
+          cycle++;
+          placed++;
+        }
+      }
+    }
     var bw = cols * cw;
     var bh = rows * ch;
     var nx = Math.max(1, Math.ceil((vw + cw) / bw));
@@ -876,9 +920,33 @@
     var availW = cw - pad * 2;
     var availH = ch - pad * 2 - DRIFT.caption;
     var base = [];
-    list.forEach(function (p, i) {
-      var c = i % cols;
-      var r = Math.floor(i / cols);
+    // 写真を入れる枠の順番: 最初に見える区画の枠（左上から）→ ほかの枠（左上から行ごと）。新しい写真ほど最初の画面に入る
+    var order = [];
+    var inFirst = {};
+    for (var fr = 0; fr < Math.min(visRows, rows); fr++) {
+      for (var fc = 0; fc < Math.min(visCols, cols); fc++) {
+        order.push(fr * cols + fc);
+        inFirst[fr * cols + fc] = true;
+      }
+    }
+    for (var k = 0; k < cols * rows; k++) if (!inFirst[k]) order.push(k);
+    var photoIndex = 0;
+    order.forEach(function (k) {
+      var c = k % cols;
+      var r = Math.floor(k / cols);
+      var lift = c % 2 ? Math.round(ch * 0.32) : 0; // 奇数列は少し下げて、格子に見えないようにする
+      if (yearCell[k] !== undefined) {
+        var key = 'y' + yearCell[k] + '-' + k;
+        base.push({
+          year: yearCell[k], w: DRIFT.yearW, h: DRIFT.yearH,
+          x: c * cw + pad + Math.round(seeded(key, 2) * (availW - DRIFT.yearW)),
+          y: r * ch + pad + Math.round(seeded(key, 3) * (ch - pad * 2 - DRIFT.yearH)) + lift,
+          ease: 0.5 + seeded(key, 5) * 0.5
+        });
+        return;
+      }
+      if (photoIndex >= nPhotos) return; // 余った枠は空けておく
+      var p = list[photoIndex];
       var ar = (p.width && p.height) ? p.width / p.height : 1;
       var pick = seeded(p.id, 1);
       var size = pick < 0.3 ? 0.7 : (pick < 0.7 ? 0.85 : 1); // 小・中・大
@@ -889,29 +957,33 @@
       w = Math.max(24, Math.round(w * fit));
       h = Math.max(24, Math.round(h * fit));
       base.push({
-        p: p, w: w, h: h,
+        p: p, index: photoIndex, w: w, h: h,
         x: c * cw + pad + Math.round(seeded(p.id, 2) * (availW - w)),
-        // 奇数列は少し下げて、格子に見えないようにする
-        y: r * ch + pad + Math.round(seeded(p.id, 3) * (availH - h)) + (c % 2 ? Math.round(ch * 0.32) : 0)
+        y: r * ch + pad + Math.round(seeded(p.id, 3) * (availH - h)) + lift
       });
+      photoIndex++;
     });
     var frag = document.createDocumentFragment();
     var copyFrag = document.createDocumentFragment();
+    var yearFrag = document.createDocumentFragment();
     for (var iy = 0; iy < ny; iy++) {
       for (var ix = 0; ix < nx; ix++) {
         var copy = ix > 0 || iy > 0;
-        base.forEach(function (b, i) {
-          var it = makeDriftItem(b.p, i, copy, b.w, b.h);
+        base.forEach(function (b) {
+          var it = b.p ? makeDriftItem(b.p, b.index, copy, b.w, b.h) : makeDriftYear(b.year, b.ease);
           it.x = b.x + ix * bw;
           it.y = b.y + iy * bh;
           drift.items.push(it);
-          (copy ? copyFrag : frag).appendChild(it.el);
+          (b.p ? (copy ? copyFrag : frag) : yearFrag).appendChild(it.el);
         });
       }
     }
     el.driftList.setAttribute('aria-label', state.year + '年の写真');
     el.driftList.appendChild(frag);
     el.driftCopies.appendChild(copyFrag);
+    el.driftYears.appendChild(yearFrag);
+    var firstPhoto = null;
+    for (var q = 0; q < base.length && !firstPhoto; q++) if (base[q].p) firstPhoto = base[q];
 
     // 位置: 同じタブの再読込・戻る操作では保存した位置へ（広がる動きはしない）。それ以外は初めの位置から広がる
     var saved = opts && opts.restore ? driftLoadSaved() : null;
@@ -920,8 +992,8 @@
       drift.cy = drift.ty = saved.fy * bh;
     } else {
       // 左端を少し切って「横にも続く」ことを見せつつ、いちばん新しい写真は全部見えるようにする
-      drift.cx = drift.tx = Math.max(-Math.round(cw * 0.12), 8 - base[0].x);
-      drift.cy = drift.ty = Math.round(drift.top) + 6 - pad;
+      drift.cx = drift.tx = Math.max(-Math.round(cw * 0.12), 8 - firstPhoto.x);
+      drift.cy = drift.ty = Math.round(drift.top) + 14 - pad;
     }
     drift.lx = drift.cx;
     drift.ly = drift.cy;
@@ -937,7 +1009,7 @@
     var shown = [];
     drift.items.forEach(function (it) {
       var x = wrapPos(it.x + drift.cx, it.w, drift.period.w);
-      var y = wrapPos(it.y + drift.cy, it.h + DRIFT.caption, drift.period.h);
+      var y = wrapPos(it.y + drift.cy, it.h + it.cap, drift.period.h);
       if (x < vw + drift.cell.w && x + it.w > -drift.cell.w && y < vh + drift.cell.h && y + it.h > -drift.cell.h) {
         it.intro = { dx: vw / 2 - it.w / 2 - x, dy: midY - it.h / 2 - y, start: 0 };
         shown.push(it);
@@ -983,7 +1055,7 @@
     for (var i = 0; i < drift.items.length; i++) {
       var it = drift.items[i];
       var x = wrapPos(it.x + drift.cx + vx * DRIFT.parallax * it.ease + mox * it.w * DRIFT.mouse, it.w, pw);
-      var y = wrapPos(it.y + drift.cy + vy * DRIFT.parallax * it.ease + moy * it.h * DRIFT.mouse, it.h + DRIFT.caption, ph);
+      var y = wrapPos(it.y + drift.cy + vy * DRIFT.parallax * it.ease + moy * it.h * DRIFT.mouse, it.h + it.cap, ph);
       if (it.intro) {
         var e = expoInOut((now - it.intro.start) / DRIFT.introDur);
         if (e >= 1) it.intro = null;
@@ -993,14 +1065,14 @@
           y += it.intro.dy * (1 - e);
         }
       }
-      var near = x < vw + marginX && x + it.w > -marginX && y < vh + marginY && y + it.h + DRIFT.caption > -marginY;
+      var near = x < vw + marginX && x + it.w > -marginX && y < vh + marginY && y + it.h + it.cap > -marginY;
       if (near || it.near) it.el.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0)';
       it.near = near;
       var visible = x < vw && x + it.w > 0 && y < vh && y + it.h > drift.top;
       if (visible !== it.visible) {
         it.visible = visible;
         it.el.classList.toggle('is-in', visible); // 番号と日付を1行ずつ出す（画面を出たら戻し、次に入ったときにもう一度）
-        if (visible && it.btn.getAttribute('data-seen') !== '1') {
+        if (visible && !it.year && it.btn.getAttribute('data-seen') !== '1') {
           it.btn.setAttribute('data-seen', '1');
           tryDevelop(it.btn);
         }
@@ -1022,7 +1094,7 @@
   function driftRect(it) {
     return {
       x: wrapPos(it.x + drift.tx, it.w, drift.period.w),
-      y: wrapPos(it.y + drift.ty, it.h + DRIFT.caption, drift.period.h)
+      y: wrapPos(it.y + drift.ty, it.h + it.cap, drift.period.h)
     };
   }
 
@@ -1039,10 +1111,10 @@
     if (!it) return;
     var r = driftRect(it);
     var top = drift.top + 8;
-    var inside = r.x >= 8 && r.x + it.w <= drift.vw - 8 && r.y >= top && r.y + it.h + DRIFT.caption <= drift.vh - 8;
+    var inside = r.x >= 8 && r.x + it.w <= drift.vw - 8 && r.y >= top && r.y + it.h + it.cap <= drift.vh - 8;
     if (inside) return;
     drift.tx += Math.round(drift.vw / 2 - (r.x + it.w / 2));
-    drift.ty += Math.round((top + drift.vh) / 2 - (r.y + (it.h + DRIFT.caption) / 2));
+    drift.ty += Math.round((top + drift.vh) / 2 - (r.y + (it.h + it.cap) / 2));
     driftKick();
   }
 
@@ -1170,6 +1242,11 @@
         e.stopPropagation();
         return;
       }
+      var yb = e.target.closest ? e.target.closest('.drift-year') : null;
+      if (yb && state.mode === 'drift') {
+        selectYear(yb.getAttribute('data-year')); // 散らした年の文字: その年に切り替える
+        return;
+      }
       var b = e.target.closest ? e.target.closest('.drift-tile') : null;
       if (!b || state.mode !== 'drift') return;
       openViewer(Number(b.getAttribute('data-index')), { from: 'drift', byKey: e.detail === 0 });
@@ -1215,7 +1292,6 @@
     clearTimeout(drift.resizeTimer);
     drift.resizeTimer = setTimeout(function () {
       var vw = window.innerWidth, vh = window.innerHeight;
-      drift.top = headerBottom();
       // スマホのアドレスバーの出し入れ（高さだけ少し変わる）では並べ直さない
       if (vw === drift.vw && Math.abs(vh - drift.vh) < 120) {
         drift.vh = vh;
