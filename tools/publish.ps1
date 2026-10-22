@@ -1,7 +1,7 @@
 ﻿<#
 .SYNOPSIS
   写真ビューアを生成・検証・試験してから GitHub Pages へ公開します。
-  同期仕様ID PV-SPEC-2026-10-v10 / 版 10.0
+  同期仕様ID PV-SPEC-2026-10-v11 / 版 11.0
 
 .DESCRIPTION
   次の順に実行し、どこかで失敗したら commit / push は行いません（S-10）。
@@ -58,8 +58,8 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$SpecId = 'PV-SPEC-2026-10-v10'
-$SpecVersion = '10.0'
+$SpecId = 'PV-SPEC-2026-10-v11'
+$SpecVersion = '11.0'
 $ExitFailed = 1
 $ExitGuard = 2
 $ExitBusy = 75

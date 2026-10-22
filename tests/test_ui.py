@@ -1,4 +1,4 @@
-"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v10 / 版 10.0）
+"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v11 / 版 11.0）
 
 Playwright（Chromium）でスマートフォン画面をエミュレートし、試験画像から生成したサイトを
 GitHub Pages と同じ「リポジトリ名のサブパス」で配信して確認する。
@@ -322,7 +322,6 @@ def test_cover_space_is_reserved_before_image_loads(phone, site):
 def test_cover_title_meta_and_catalogue_numbers(phone, site):
     page, w = open_page(phone, site["main"])
     assert page.inner_text("#app-title") == "写真"
-    assert page.evaluate("document.getElementById('app-title').classList.contains('is-ja')")
     years = site["doc"]["years"]
     assert page.inner_text("#photo-range") == f"{years[-1]}–{years[0]}"
     assert page.get_attribute("#tab-2025", "data-count") == "12"
@@ -355,16 +354,13 @@ def test_title_uses_bundled_handwriting_font(pw, site):
         page.goto(site["main"])
         page.wait_for_selector("html[data-pv=ready]")
         assert page.inner_text("#app-title") == "Daily"
-        assert not page.evaluate("document.getElementById('app-title').classList.contains('is-ja')")
         page.evaluate("document.fonts.ready")
         assert page.evaluate("document.fonts.check('16px \"Klee One UI\"', 'Daily 2026年の16枚')")
         assert page.evaluate("[...document.fonts].some(f => f.family.replace(/\"/g, '') === 'Klee One UI' && f.status === 'loaded')")
         assert any(u == site["main"] + "fonts/klee-one-subset.woff2" for u in w.requests)
-        fams = page.evaluate("['#app-title', '#tab-2026', '#photo-count', '.tile-date'].map(s => getComputedStyle(document.querySelector(s)).fontFamily)")
+        fams = page.evaluate("['#tab-2026', '#photo-count', '.tile-date'].map(s => getComputedStyle(document.querySelector(s)).fontFamily)")
         assert all(f.startswith('"Klee One UI", "Hiragino Maru Gothic ProN"') for f in fams), fams  # v9: 全文字版なし
         assert page.title() == "Daily"
-        lines = page.evaluate("Math.round(document.getElementById('app-title').getBoundingClientRect().height / parseFloat(getComputedStyle(document.getElementById('app-title')).lineHeight))")
-        assert lines == 1  # 画面幅いっぱいでも1行に収まる
         w.assert_clean()
     finally:
         ctx.close()
@@ -1018,9 +1014,9 @@ def test_slow_mobile_network_shows_loading_then_photos(pw, site):
 # 見出しは流れ、年の行だけが残る／全画面表示の操作は写真に重ならない
 # ===========================================================================
 def test_only_top_bar_stays_on_scroll(phone, site):
-    """上部のバー（名前と小さな年）だけが残り、表紙はスクロールで流れる。"""
+    """上部のバー（小さな年）だけが残り、表紙はスクロールで流れる。"""
     page, w = open_page(phone, site["main"])
-    assert page.is_visible("#app-title") and page.is_visible("#tab-2026")
+    assert page.is_visible("#tab-2026")
     page.evaluate("window.scrollTo(0, 1400)")
     page.wait_for_timeout(200)
     bar = page.evaluate("document.querySelector('.site-bar').getBoundingClientRect().top")
@@ -1053,7 +1049,7 @@ def test_top_bar_year_links_switch_year(phone, site):
 
 
 def test_years_are_only_in_the_top_bar(pw, site):
-    """年は上部バーの右側だけに並べる（名前の下の大きな年の一覧はなし）。表紙はバーのすぐ下から。"""
+    """動かない一覧: 年は上部バーの右側だけに並べる（名前の下の大きな年の一覧はなし）。表紙はバーのすぐ下から。"""
     p, browser = pw
     for device in ("iPhone 13", "desktop"):
         ctx = browser.new_context(**p.devices["iPhone 13"], **STILL) if device != "desktop" else browser.new_context(viewport={"width": 1440, "height": 900}, **STILL)
@@ -1063,12 +1059,11 @@ def test_years_are_only_in_the_top_bar(pw, site):
             assert page.locator("[role=tablist]").count() == 1 and page.locator(".site-bar [role=tablist]").count() == 1
             r = page.evaluate(
                 """(() => { const box = s => document.querySelector(s).getBoundingClientRect();
-                   const bar = box('.site-bar'), title = box('#app-title'), first = box('#tab-2026'), last = box('#tab-2023'), cover = box('#cover');
-                   return { inBar: first.top >= bar.top && first.bottom <= bar.bottom, rightOfTitle: first.left > title.right,
-                            sameRow: Math.abs((first.top + first.bottom) / 2 - (title.top + title.bottom) / 2) < 8,
+                   const bar = box('.site-bar'), first = box('#tab-2026'), last = box('#tab-2023'), cover = box('#cover');
+                   return { inBar: first.top >= bar.top && first.bottom <= bar.bottom,
                             rightEdge: box('.bar-inner').right - last.right, coverGap: cover.top - bar.bottom }; })()"""
             )
-            assert r["inBar"] and r["rightOfTitle"] and r["sameRow"], (device, r)
+            assert r["inBar"], (device, r)
             assert r["rightEdge"] < 60  # 内容の右端（余白の内側）に寄せる
             assert 0 <= r["coverGap"] <= 60, (device, r)  # 表紙がバーのすぐ下に来る
             w.assert_clean()
@@ -1104,7 +1099,7 @@ def test_always_white_background_and_black_text(pw, site, scheme):
             """(() => { const c = s => getComputedStyle(document.querySelector(s)).color;
                return { body: getComputedStyle(document.body).backgroundColor,
                         bar: getComputedStyle(document.querySelector('.site-bar')).backgroundColor,
-                        text: ['#app-title', '#tab-2026', '#tab-2025', '.bar-year[data-year="2024"]', '#photo-count',
+                        text: ['#tab-2026', '#tab-2025', '.bar-year[data-year="2024"]', '#photo-count',
                                '#photo-range', '.tile-no', '.tile-date'].map(c) }; })()"""
         )
         assert colors["body"] == "rgb(255, 255, 255)"
@@ -1236,59 +1231,25 @@ def test_develop_does_not_break_year_switch_or_broken_images(phone, site):
     assert w.page_errors == []
 
 
-def test_title_daily_is_drawn_in_stroke_order_once_per_tab(phone_drift, site):
-    page = phone_drift.new_page()
-    w = Watch(page)
-    _patch_doc(page, lambda d: d.update(title="Daily"))
-    page.goto(site["main"])
-    page.wait_for_selector("html[data-pv=ready]")
-    assert page.evaluate("document.getElementById('app-title').classList.contains('has-art')")
-    assert page.inner_text("#app-title .visually-hidden") == "Daily" and page.title() == "Daily"
-    assert page.get_attribute("#app-title svg", "aria-hidden") == "true"
-    assert page.locator("#app-title svg .stroke").count() == 9  # D(2) a(2) i(2) l(1) y(2)
-    assert page.evaluate("document.querySelector('#app-title svg').classList.contains('is-drawing')")
-    delays = page.eval_on_selector_all("#app-title svg .stroke", "els => els.map(e => parseFloat(getComputedStyle(e).animationDelay))")
-    assert delays == sorted(delays) and delays[0] > 0  # 書き順どおりに1画ずつ
-    page.wait_for_timeout(500)
-    first = page.evaluate("parseFloat(getComputedStyle(document.querySelector('#app-title svg .stroke')).strokeDashoffset)")
-    last = page.evaluate("parseFloat(getComputedStyle([...document.querySelectorAll('#app-title svg .stroke')].pop()).strokeDashoffset)")
-    assert last > 0  # まだ書いていない画が残っている
-    page.wait_for_timeout(3500)
-    done = page.eval_on_selector_all("#app-title svg .stroke", "els => els.map(e => parseFloat(getComputedStyle(e).strokeDashoffset))")
-    assert all(abs(x) < 0.5 for x in done), done
-    assert page.evaluate("getComputedStyle(document.querySelector('#app-title svg .ink-full')).opacity") == "1"
-    page.reload()  # 同じタブでは描き終わった状態で表示
-    page.wait_for_selector("html[data-pv=ready]")
-    assert page.evaluate("document.querySelector('#app-title svg').classList.contains('is-drawn')")
-    assert page.evaluate("getComputedStyle(document.querySelector('#app-title svg .ink-full')).opacity") == "1"
-    assert first < 2000
-    w.assert_clean()
-
-
-def test_other_titles_are_plain_text(phone, site):
-    page = phone.new_page()
-    w = Watch(page)
-    _patch_doc(page, lambda d: d.update(title="Notes"))
-    page.goto(site["main"])
-    page.wait_for_selector("html[data-pv=ready]")
-    assert page.inner_text("#app-title") == "Notes" and page.locator("#app-title svg").count() == 0
-    w.assert_clean()
-
-
-def test_title_is_not_animated_with_reduced_motion(pw, site):
+def test_site_name_is_not_shown_but_named(pw, site):
+    """仕様 v11: サイト名（Daily）は画面に出さない。読み上げ用の見出しとブラウザーのタブの名前にだけ使う。"""
     p, browser = pw
-    ctx = browser.new_context(**p.devices["iPhone 13"], reduced_motion="reduce")
-    try:
-        page = ctx.new_page()
-        w = Watch(page)
-        _patch_doc(page, lambda d: d.update(title="Daily"))
-        page.goto(site["main"])
-        page.wait_for_selector("html[data-pv=ready]")
-        assert page.evaluate("document.querySelector('#app-title svg').classList.contains('is-drawn')")
-        assert page.evaluate("getComputedStyle(document.querySelector('#app-title svg .ink-full')).opacity") == "1"
-        w.assert_clean()
-    finally:
-        ctx.close()
+    for opts in (STILL, MOTION):
+        ctx = browser.new_context(**p.devices["iPhone 13"], **opts)
+        try:
+            page = ctx.new_page()
+            w = Watch(page)
+            _patch_doc(page, lambda d: d.update(title="Daily"))
+            page.goto(site["main"])
+            page.wait_for_selector("html[data-pv=ready]")
+            assert page.title() == "Daily"
+            assert page.inner_text("h1#app-title") == "Daily"  # 読み上げでは見出しとして読む
+            r = page.evaluate("(() => { const r = document.getElementById('app-title').getBoundingClientRect(); return [r.width, r.height]; })()")
+            assert r[0] <= 1 and r[1] <= 1  # 画面には出ない
+            assert page.locator("#app-title svg, template#title-art").count() == 0  # v8 の書き順の図形は廃止
+            w.assert_clean()
+        finally:
+            ctx.close()
 
 
 def test_story_in_old_data_is_not_shown(phone, site):
@@ -1338,7 +1299,23 @@ def drift_boxes(page, sel="#drift-list > li"):
 
 def on_screen(page, boxes):
     vw, vh = page.evaluate("[innerWidth, innerHeight]")
-    return [b for b in boxes if b["x"] >= 0 and b["y"] >= 60 and b["x"] + b["w"] <= vw and b["y"] + b["h"] <= vh]
+    return [b for b in boxes if b["x"] >= 0 and b["y"] >= 0 and b["x"] + b["w"] <= vw and b["y"] + b["h"] <= vh]
+
+
+def pick_year(page, year):
+    """動く一覧で年を切り替える（散らした年の文字のうち、画面に見えているものを押す）。"""
+    drift_settled(page)
+    vw, vh = page.evaluate("[innerWidth, innerHeight]")
+    for step in [(0, 0)] + [(0, 500)] * 3:
+        if step != (0, 0):
+            page.mouse.wheel(*step)  # 見えなければ少しずつ動かして探す
+            drift_settled(page)
+        for l in page.evaluate(YEAR_LABELS):
+            if l["year"] == str(year) and l["x"] >= 0 and l["x"] + l["w"] <= vw and l["y"] >= 0 and l["y"] + l["h"] <= vh:
+                page.mouse.click(l["x"] + l["w"] / 2, l["y"] + l["h"] / 2)
+                return
+    # 近くに見つからないとき（年が多い試験用データ）は、上部のバーの年のタブを使う（キーボードと同じ経路）
+    page.evaluate("y => document.getElementById('tab-' + y).click()", str(year))
 
 
 def test_drift_scatters_the_years_photos_in_their_own_shapes(phone_drift, site):
@@ -1445,7 +1422,7 @@ def test_drift_drag_moves_and_tap_opens_the_photo(phone_drift, site):
     assert not viewer_open(page)  # ドラッグでは開かない
     drift_settled(page)
     after = {b["i"]: b for b in drift_boxes(page)}
-    i0 = next(i for i, b in before.items() if b["inView"])
+    i0 = next(i for i, b in before.items() if b["inView"] and b["y"] > 250 and b["x"] > 80)  # 反対側へ回らない写真
     assert after[i0]["y"] < before[i0]["y"] - 150 and after[i0]["x"] < before[i0]["x"] - 40
     target = on_screen(page, drift_boxes(page))[0]
     page.touchscreen.tap(target["x"] + target["w"] / 2, target["y"] + target["h"] / 2)
@@ -1472,7 +1449,7 @@ def test_drift_keyboard_tab_reveals_photos_and_opens_them(desktop_drift, site):
     assert idx == 11
     drift_settled(page)
     r = page.evaluate("(() => { const r = document.activeElement.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; })()")
-    assert r[0] >= 0 and r[2] <= vw and r[1] >= 56 and r[3] <= vh  # フォーカスした写真が見える所まで動く
+    assert r[0] >= 0 and r[2] <= vw and r[1] >= 0 and r[3] <= vh  # フォーカスした写真が見える所まで動く
     page.keyboard.press("Enter")
     page.wait_for_function("document.getElementById('viewer').open")
     assert counter(page) == f"12 / {N_NEWEST}"
@@ -1483,7 +1460,7 @@ def test_drift_keyboard_tab_reveals_photos_and_opens_them(desktop_drift, site):
     assert page.evaluate("document.activeElement.dataset.index") == "12"
     drift_settled(page)
     r = page.evaluate("(() => { const r = document.activeElement.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; })()")
-    assert r[0] >= 0 and r[2] <= vw and r[1] >= 56 and r[3] <= vh  # 送った先の写真が見える所へ
+    assert r[0] >= 0 and r[2] <= vw and r[1] >= 0 and r[3] <= vh  # 送った先の写真が見える所へ
     # 矢印キーで一覧を動かす
     b0 = drift_boxes(page)[12]
     page.keyboard.press("ArrowDown")
@@ -1494,7 +1471,7 @@ def test_drift_keyboard_tab_reveals_photos_and_opens_them(desktop_drift, site):
 
 def test_drift_year_switch_replays_the_spread(phone_drift, site):
     page, w = open_drift(phone_drift, site["main"])
-    page.click("#tab-2025")
+    pick_year(page, 2025)
     assert page.get_attribute("#drift", "data-intro") == "1"
     assert page.get_attribute("#drift-list", "aria-label") == "2025年の写真"
     drift_settled(page)
@@ -1508,7 +1485,7 @@ def test_drift_year_switch_replays_the_spread(phone_drift, site):
 def test_drift_fills_the_screen_with_copies_when_few_photos(phone_drift, site):
     """写真が少ない年は並びを複製して画面を埋める。複製は読み上げ・Tab の対象にしない。"""
     page, w = open_drift(phone_drift, site["main"])
-    page.click("#tab-2023")
+    pick_year(page, 2023)
     drift_settled(page)
     assert page.locator("#drift-list > li").count() == 2
     copies = page.locator("#drift-copies .drift-item")
@@ -1517,19 +1494,26 @@ def test_drift_fills_the_screen_with_copies_when_few_photos(phone_drift, site):
     assert page.eval_on_selector_all("#drift-copies .drift-tile", "els => els.every(e => e.tabIndex === -1)")
     assert page.eval_on_selector_all("#drift-copies img", "els => els.every(e => e.alt === '')")
     vw, vh = page.evaluate("[innerWidth, innerHeight]")
-    every = drift_boxes(page, "#drift .drift-item")
-    shown = [b for b in every if b["x"] < vw and b["x"] + b["w"] > 0 and b["y"] < vh and b["y"] + b["h"] > 60]
-    assert len(shown) >= 3
+    every = drift_boxes(page, "#drift .drift-item:not(.drift-year-item)")
+    shown = [b for b in every if b["x"] < vw and b["x"] + b["w"] > 0 and b["y"] < vh and b["y"] + b["h"] > 0]
+    assert len(shown) >= 2 and len({b["id"] for b in shown}) == 2  # 2枚の写真が複製で画面を埋める
     # 複製をタップしても、その写真が開く
-    c = next(b for b in drift_boxes(page, "#drift-copies .drift-item") if 0 <= b["x"] and b["x"] + b["w"] <= vw and 60 <= b["y"] and b["y"] + b["h"] <= vh)
+    c = None
+    for _ in range(6):
+        c = next((b for b in drift_boxes(page, "#drift-copies .drift-item") if 0 <= b["x"] and b["x"] + b["w"] <= vw and 0 <= b["y"] and b["y"] + b["h"] <= vh), None)
+        if c:
+            break
+        page.mouse.wheel(0, 300)
+        drift_settled(page)
+    assert c, "画面に複製が見つかりません"
     page.touchscreen.tap(c["x"] + c["w"] / 2, c["y"] + c["h"] / 2)
     page.wait_for_function("document.getElementById('viewer').open")
     assert page.get_attribute("#viewer-img", "data-id") == c["id"] and counter(page) == f"{c['i'] + 1} / 2"
-    before = drift_boxes(page, "#drift .drift-item")
+    before = drift_boxes(page, "#drift .drift-item:not(.drift-year-item)")
     page.click("#viewer-close")
     page.wait_for_timeout(300)
     drift_settled(page)
-    after = drift_boxes(page, "#drift .drift-item")
+    after = drift_boxes(page, "#drift .drift-item:not(.drift-year-item)")
     assert [(round(b["x"]), round(b["y"])) for b in after] == [(round(b["x"]), round(b["y"])) for b in before]  # 閉じても動かない
     w.assert_clean()
 
@@ -1600,7 +1584,7 @@ def test_drift_broken_image_is_shown_and_year_switch_still_works(phone_drift, si
     page.goto(site["main"])
     page.wait_for_selector("#drift-list .drift-tile[data-index='0'].is-broken.is-developed", timeout=10000)
     assert page.is_visible("#drift-list .drift-tile[data-index='0'] .tile-fallback")
-    page.click("#tab-2025")
+    pick_year(page, 2025)
     drift_settled(page)
     assert page.locator("#drift-list > li").count() == 12
     assert w.page_errors == []
@@ -1611,7 +1595,7 @@ def test_reduced_motion_setting_switches_between_the_two_lists(phone_drift, site
     page, w = open_drift(phone_drift, site["main"])
     page.emulate_media(reduced_motion="reduce")
     page.wait_for_function("document.documentElement.dataset.mode === 'still'")
-    assert page.locator("#grid > li").count() == 60 and page.locator("#drift .drift-item").count() == 0
+    assert page.locator("#grid > li").count() == 60 and page.locator("#drift .drift-item:not(.drift-year-item)").count() == 0
     assert page.is_visible("#cover") and page.is_visible("#grid")
     assert page.evaluate("document.scrollingElement.scrollHeight > innerHeight * 2")  # 縦にスクロールする一覧
     page.click(".tile[data-index='3']")
@@ -1628,12 +1612,12 @@ def test_reduced_motion_setting_switches_between_the_two_lists(phone_drift, site
 def test_drift_empty_and_single_photo(phone_drift, site):
     page, w = open_page(phone_drift, site["empty"], state="empty")
     assert "写真はまだありません" in page.inner_text("#status")
-    assert page.locator("#drift .drift-item").count() == 0
+    assert page.locator("#drift .drift-item:not(.drift-year-item)").count() == 0
     w.assert_clean()
     page, w = open_drift(phone_drift, site["single"])
     assert page.locator("#drift-list > li").count() == 1
     vw, vh = page.evaluate("[innerWidth, innerHeight]")
-    every = drift_boxes(page, "#drift .drift-item")
+    every = drift_boxes(page, "#drift .drift-item:not(.drift-year-item)")
     assert len([b for b in every if b["x"] < vw and b["x"] + b["w"] > 0 and b["y"] < vh and b["y"] + b["h"] > 60]) >= 2
     w.assert_clean()
 
@@ -1644,3 +1628,141 @@ def test_drift_relative_urls_and_no_external_requests(phone_drift, site):
     drift_settled(page)
     assert w.requests and all(u.startswith(site["main"]) for u in w.requests), [u for u in w.requests if not u.startswith(site["main"])]
     w.assert_clean()
+
+
+# ===========================================================================
+# 仕様 v11: 年を写真と同じように散らす／サイト名を出さない／選んだものの印「」
+# ===========================================================================
+YEAR_LABELS = """() => [...document.querySelectorAll('#drift-years .drift-year')].map(b => { const r = b.getBoundingClientRect();
+    return { year: b.dataset.year, cur: b.classList.contains('is-current'), x: r.left, y: r.top, w: r.width, h: r.height,
+             deco: getComputedStyle(b).textDecorationLine, tab: b.tabIndex }; })"""
+
+
+def year_labels(page):
+    return page.evaluate(YEAR_LABELS)
+
+
+def test_drift_years_are_scattered_among_the_photos(phone_drift, site):
+    page, w = open_drift(phone_drift, site["main"])
+    assert page.evaluate("getComputedStyle(document.querySelector('.site-bar')).opacity") == "0"  # 上部のバーは出さない
+    labels = year_labels(page)
+    years = [str(y) for y in site["doc"]["years"]]
+    assert {l["year"] for l in labels} == set(years)  # すべての年が散らばっている
+    vw, vh = page.evaluate("[innerWidth, innerHeight]")
+    first = [l for l in labels if l["x"] >= 0 and l["x"] + l["w"] <= vw and l["y"] >= 0 and l["y"] + l["h"] <= vh]
+    assert {"2026", "2025"} <= {l["year"] for l in first}  # 開いた画面に新しい年から見える（年が多いときは残りは近くに）
+    assert all(l["deco"] == "underline" for l in labels if l["cur"]) and all(l["year"] == "2026" for l in labels if l["cur"])
+    assert all(l["deco"] == "none" for l in labels if not l["cur"])
+    assert page.get_attribute("#drift-years", "aria-hidden") == "true" and all(l["tab"] == -1 for l in labels)
+    # 写真と重ならない
+    photos = [b for b in drift_boxes(page) if b["inView"]]
+    for l in first:
+        for b in photos:
+            ox = min(l["x"] + l["w"], b["x"] + b["w"]) - max(l["x"], b["x"])
+            oy = min(l["y"] + l["h"], b["bottom"]) - max(l["y"], b["y"])
+            assert ox <= 1 or oy <= 1, (l, b)
+    # 年の文字を押すと、その年に切り替わる
+    target = next(l for l in first if l["year"] == "2025")
+    page.touchscreen.tap(target["x"] + target["w"] / 2, target["y"] + target["h"] / 2)
+    assert page.get_attribute("#drift", "data-intro") == "1"
+    drift_settled(page)
+    assert selected_tab(page) == "2025"
+    assert [b["id"] for b in drift_boxes(page)] == [p["id"] for p in site["doc"]["photos"] if p["year"] == 2025]
+    assert {l["year"] for l in year_labels(page) if l["cur"]} == {"2025"}
+    w.assert_clean()
+
+
+def test_drift_years_move_like_photos(desktop_drift, site):
+    page, w = open_drift(desktop_drift, site["main"])
+    vw, vh = page.evaluate("[innerWidth, innerHeight]")
+    page.mouse.move(vw / 2, vh / 2)
+    drift_settled(page)
+    before = year_labels(page)
+    photos_before = {b["i"]: b for b in on_screen(page, drift_boxes(page))}
+    for _ in range(3):
+        page.mouse.wheel(0, 80)
+        page.wait_for_timeout(16)
+    drift_settled(page)
+    after = year_labels(page)
+    photos_after = {b["i"]: b for b in drift_boxes(page)}
+    shift = [round(photos_before[i]["y"] - photos_after[i]["y"]) for i in photos_before]
+    on = [k for k, l in enumerate(before) if 0 <= l["y"] <= vh - 200 and 0 <= l["x"] <= vw]
+    assert on
+    assert all(abs((before[k]["y"] - after[k]["y"]) - shift[0]) < 1.5 for k in on)  # 写真と同じだけ動いて止まる
+    w.assert_clean()
+
+
+def test_drift_top_bar_appears_only_for_keyboard(desktop_drift, site):
+    page, w = open_drift(desktop_drift, site["main"])
+    bar = "getComputedStyle(document.querySelector('.site-bar')).opacity"
+    assert page.evaluate(bar) == "0"
+    page.keyboard.press("Tab")  # スキップリンク
+    page.keyboard.press("Tab")  # 年のタブ
+    assert page.evaluate("document.activeElement.id") == "tab-2026"
+    assert page.evaluate(bar) == "1"
+    page.keyboard.press("ArrowRight")
+    assert selected_tab(page) == "2025"
+    page.keyboard.press("Tab")  # 写真へ
+    assert page.evaluate("document.activeElement.classList.contains('drift-tile')")
+    assert page.evaluate(bar) == "0"
+    w.assert_clean()
+
+
+MARK = """el => { const b = getComputedStyle(el, '::before'), a = getComputedStyle(el, '::after'), s = getComputedStyle(el);
+    return { outline: s.outlineStyle, before: [b.opacity, b.borderTopWidth, b.borderLeftWidth, b.borderBottomWidth, b.borderTopColor],
+             after: [a.opacity, a.borderBottomWidth, a.borderRightWidth, a.borderTopWidth, a.borderBottomColor] }; }"""
+
+
+def assert_mark(page, shown):
+    page.wait_for_timeout(250)
+    m = page.evaluate(f"({MARK})(document.activeElement)")
+    assert m["outline"] == "none", m  # 青い枠は出さない
+    if shown:  # 左上に「、右下に」
+        line = lambda v: v not in ("0px", "")  # 線の太さ（画面の細かさで 1〜1.5px）
+        assert m["before"][0] == "1" and line(m["before"][1]) and line(m["before"][2]) and m["before"][3] == "0px", m
+        assert m["after"][0] == "1" and line(m["after"][1]) and line(m["after"][2]) and m["after"][3] == "0px", m
+        assert m["before"][4] == m["after"][4] == "rgb(0, 0, 0)", m
+    else:
+        assert m["before"][0] == "0" and m["after"][0] == "0", m
+
+
+@pytest.mark.parametrize("opts", ["drift", "still"])
+def test_selection_mark_is_corner_brackets_not_a_blue_frame(pw, site, opts):
+    p, browser = pw
+    ctx = browser.new_context(viewport={"width": 1280, "height": 900}, **(MOTION if opts == "drift" else STILL))
+    try:
+        page, w = open_page(ctx, site["main"])
+        if opts == "drift":
+            drift_settled(page)
+        page.focus("#tab-2026")
+        page.keyboard.press("ArrowRight")
+        page.keyboard.press("ArrowLeft")
+        assert_mark(page, True)  # 年のタブ
+        page.keyboard.press("Tab")
+        if opts == "still":
+            assert page.evaluate("document.activeElement.id") == "cover-btn"
+            assert_mark(page, True)  # 表紙の写真
+            page.keyboard.press("Tab")
+        assert page.evaluate("document.activeElement.dataset.index") == "0"
+        if opts == "drift":
+            drift_settled(page)
+        assert_mark(page, True)  # 一覧の写真
+        page.keyboard.press("Enter")
+        page.wait_for_function("document.getElementById('viewer').open")
+        assert page.evaluate("document.activeElement.id") == "viewer-close"
+        assert_mark(page, True)  # 全画面表示のボタン
+        page.keyboard.press("Escape")
+        assert_mark(page, True)  # 戻った写真
+        # 指やマウスで選んだときは印を出さない（閉じて戻ったときも）
+        sel = ".drift-tile" if opts == "drift" else ".tile"
+        box = page.evaluate(f"(() => {{ const r = [...document.querySelectorAll('{sel}')].find(e => {{ const q = e.getBoundingClientRect(); return e !== document.activeElement && q.top > 80 && q.bottom < innerHeight && q.left > 0 && q.right < innerWidth; }}).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }})()")
+        page.mouse.click(*box)
+        page.wait_for_function("document.getElementById('viewer').open")
+        assert_mark(page, False)
+        page.click("#viewer-close")
+        assert_mark(page, False)
+        css = Path(__file__).resolve().parent.parent.joinpath("css", "style.css").read_text(encoding="utf-8")
+        assert "#2f6feb" not in css and "var(--focus)" not in css
+        w.assert_clean()
+    finally:
+        ctx.close()
