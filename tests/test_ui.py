@@ -1,4 +1,4 @@
-"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v11 / 版 11.0）
+"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v12 / 版 12.0）
 
 Playwright（Chromium）でスマートフォン画面をエミュレートし、試験画像から生成したサイトを
 GitHub Pages と同じ「リポジトリ名のサブパス」で配信して確認する。
@@ -142,6 +142,17 @@ class Watch:
 # v9 までの一覧・表紙・スクロール位置の試験は、動かない一覧（reduced_motion="reduce"）で行う。
 STILL = {"reduced_motion": "reduce"}
 MOTION = {"reduced_motion": "no-preference"}
+# 仕様 v12: 動く見せ方では最初に「表示を選ぶ」画面が出る。パターンの試験では、同じタブで選び済みの状態から始める
+PICK_1 = "try { sessionStorage.setItem('pv:pattern', '1') } catch (e) {}"
+PICK_2 = "try { sessionStorage.setItem('pv:pattern', '2') } catch (e) {}"
+
+
+def motion_context(browser, pattern="1", **kw):
+    """動く見せ方のブラウザー（pattern=None なら「表示を選ぶ」画面から始まる）。"""
+    ctx = browser.new_context(**kw, **MOTION)
+    if pattern:
+        ctx.add_init_script(PICK_1 if pattern == "1" else PICK_2)
+    return ctx
 
 
 @pytest.fixture
@@ -166,7 +177,7 @@ def desktop(pw):
 def phone_drift(pw):
     """動く一覧（ふだんの設定）のスマホ。"""
     p, browser = pw
-    ctx = browser.new_context(**p.devices["iPhone 13"], **MOTION)
+    ctx = motion_context(browser, "1", **p.devices["iPhone 13"])
     yield ctx
     ctx.close()
 
@@ -175,7 +186,7 @@ def phone_drift(pw):
 def desktop_drift(pw):
     """動く一覧（ふだんの設定）の PC（マウスあり）。"""
     _p, browser = pw
-    ctx = browser.new_context(viewport={"width": 1440, "height": 900}, **MOTION)
+    ctx = motion_context(browser, "1", viewport={"width": 1440, "height": 900})
     yield ctx
     ctx.close()
 
@@ -337,7 +348,8 @@ def test_cover_title_meta_and_catalogue_numbers(phone, site):
     w.assert_clean()
 
 
-def test_title_uses_bundled_handwriting_font(pw, site):
+def test_text_uses_bundled_angular_font(pw, site):
+    """仕様 v12: 文字はカクカクした DotGothic16（画面の文言だけの小さな版）。手書き風の Klee One は使わない。"""
     p, browser = pw
     ctx = browser.new_context(**p.devices["iPhone 13"], **STILL)
     try:
@@ -355,11 +367,14 @@ def test_title_uses_bundled_handwriting_font(pw, site):
         page.wait_for_selector("html[data-pv=ready]")
         assert page.inner_text("#app-title") == "Daily"
         page.evaluate("document.fonts.ready")
-        assert page.evaluate("document.fonts.check('16px \"Klee One UI\"', 'Daily 2026年の16枚')")
-        assert page.evaluate("[...document.fonts].some(f => f.family.replace(/\"/g, '') === 'Klee One UI' && f.status === 'loaded')")
-        assert any(u == site["main"] + "fonts/klee-one-subset.woff2" for u in w.requests)
-        fams = page.evaluate("['#tab-2026', '#photo-count', '.tile-date'].map(s => getComputedStyle(document.querySelector(s)).fontFamily)")
-        assert all(f.startswith('"Klee One UI", "Hiragino Maru Gothic ProN"') for f in fams), fams  # v9: 全文字版なし
+        assert page.evaluate("document.fonts.check('12px \"DotGothic16 UI\"', 'No. 47 2026年の16枚 表示を選ぶ')")
+        assert page.evaluate("[...document.fonts].some(f => f.family.replace(/\"/g, '') === 'DotGothic16 UI' && f.status === 'loaded')")
+        assert any(u == site["main"] + "fonts/dotgothic16-subset.woff2" for u in w.requests)
+        assert not [u for u in w.requests if "klee" in u]
+        fams = page.evaluate("['#tab-2026', '#photo-count', '.tile-date', 'body'].map(s => getComputedStyle(document.querySelector(s)).fontFamily)")
+        assert all(f.startswith('"DotGothic16 UI", "Hiragino Sans"') for f in fams), fams
+        sizes = page.evaluate("['#tab-2026', '#photo-count', '.tile-date', 'body'].map(s => parseFloat(getComputedStyle(document.querySelector(s)).fontSize))")
+        assert max(sizes) <= 12, sizes  # 文字は小さめ
         assert page.title() == "Daily"
         w.assert_clean()
     finally:
@@ -1236,6 +1251,7 @@ def test_site_name_is_not_shown_but_named(pw, site):
     p, browser = pw
     for opts in (STILL, MOTION):
         ctx = browser.new_context(**p.devices["iPhone 13"], **opts)
+        ctx.add_init_script(PICK_1)
         try:
             page = ctx.new_page()
             w = Watch(page)
@@ -1442,7 +1458,7 @@ def test_drift_keyboard_tab_reveals_photos_and_opens_them(desktop_drift, site):
     vw, vh = page.evaluate("[innerWidth, innerHeight]")
     page.mouse.move(vw / 2, vh / 2)
     page.focus("#tab-2026")
-    for k in range(12):
+    for k in range(13):  # 「表示を選ぶ」のあと、写真を12枚目まで
         page.keyboard.press("Tab")
     assert page.evaluate("document.activeElement.classList.contains('drift-tile')")
     idx = int(page.evaluate("document.activeElement.dataset.index"))
@@ -1702,6 +1718,7 @@ def test_drift_top_bar_appears_only_for_keyboard(desktop_drift, site):
     assert page.evaluate(bar) == "1"
     page.keyboard.press("ArrowRight")
     assert selected_tab(page) == "2025"
+    page.keyboard.press("Tab")  # 「表示を選ぶ」
     page.keyboard.press("Tab")  # 写真へ
     assert page.evaluate("document.activeElement.classList.contains('drift-tile')")
     assert page.evaluate(bar) == "0"
@@ -1729,7 +1746,7 @@ def assert_mark(page, shown):
 @pytest.mark.parametrize("opts", ["drift", "still"])
 def test_selection_mark_is_corner_brackets_not_a_blue_frame(pw, site, opts):
     p, browser = pw
-    ctx = browser.new_context(viewport={"width": 1280, "height": 900}, **(MOTION if opts == "drift" else STILL))
+    ctx = motion_context(browser, "1", viewport={"width": 1280, "height": 900}) if opts == "drift" else browser.new_context(viewport={"width": 1280, "height": 900}, **STILL)
     try:
         page, w = open_page(ctx, site["main"])
         if opts == "drift":
@@ -1742,6 +1759,10 @@ def test_selection_mark_is_corner_brackets_not_a_blue_frame(pw, site, opts):
         if opts == "still":
             assert page.evaluate("document.activeElement.id") == "cover-btn"
             assert_mark(page, True)  # 表紙の写真
+            page.keyboard.press("Tab")
+        else:
+            assert page.evaluate("document.activeElement.id") == "pattern-switch"
+            assert_mark(page, True)  # 「表示を選ぶ」
             page.keyboard.press("Tab")
         assert page.evaluate("document.activeElement.dataset.index") == "0"
         if opts == "drift":
@@ -1763,6 +1784,181 @@ def test_selection_mark_is_corner_brackets_not_a_blue_frame(pw, site, opts):
         assert_mark(page, False)
         css = Path(__file__).resolve().parent.parent.joinpath("css", "style.css").read_text(encoding="utf-8")
         assert "#2f6feb" not in css and "var(--focus)" not in css
+        w.assert_clean()
+    finally:
+        ctx.close()
+
+
+# ===========================================================================
+# 仕様 v12: 最初に見せ方（パターン）を選ぶ／パターン2（列ごとに遅れてついてくる）
+# ===========================================================================
+def chooser_open(page):
+    return page.evaluate("document.getElementById('chooser').open")
+
+
+def test_pattern_chooser_comes_first_and_is_remembered(pw, site):
+    p, browser = pw
+    ctx = motion_context(browser, None, **p.devices["iPhone 13"])
+    try:
+        page = ctx.new_page()
+        w = Watch(page)
+        page.goto(site["main"])
+        page.wait_for_function("document.getElementById('chooser').open")
+        assert page.evaluate("document.documentElement.dataset.mode") == "choose"
+        opts = page.eval_on_selector_all(".chooser-opt", "els => els.map(e => [e.dataset.pattern, e.querySelector('.chooser-name').textContent])")
+        assert opts == [["1", "散らばる"], ["2", "列"]]
+        assert page.evaluate("document.activeElement.dataset.pattern") == "1"  # 初めては1が選ばれた状態
+        page.wait_for_selector("html[data-pv=ready]")
+        assert page.locator("#drift .drift-item, #elastic .eg-item, #grid > li").count() == 0  # 選ぶまで一覧は作らない
+        page.click(".chooser-opt[data-pattern='2']")
+        assert not chooser_open(page)
+        assert page.evaluate("document.documentElement.dataset.mode") == "elastic"
+        page.wait_for_selector("#elastic .eg-item")
+        # 同じタブの再読込では選ぶ画面を出さない
+        page.reload()
+        page.wait_for_selector("html[data-pv=ready]")
+        assert not chooser_open(page) and page.evaluate("document.documentElement.dataset.mode") == "elastic"
+        # 新しいタブでは選ぶ画面から。前回選んだ2が選ばれた状態
+        other = ctx.new_page()
+        other.goto(site["main"])
+        other.wait_for_function("document.getElementById('chooser').open")
+        assert other.evaluate("document.activeElement.dataset.pattern") == "2"
+        assert other.eval_on_selector(".chooser-opt[data-pattern='2']", "e => e.classList.contains('is-last')")
+        other.keyboard.press("Escape")  # Escape は前回のパターンで見る
+        assert other.evaluate("document.documentElement.dataset.mode") == "elastic"
+        # 「表示を選ぶ」で選び直す
+        page.click("#pattern-switch")
+        assert chooser_open(page) and page.evaluate("document.documentElement.dataset.mode") == "choose"
+        page.click(".chooser-opt[data-pattern='1']")
+        assert page.evaluate("document.documentElement.dataset.mode") == "drift"
+        assert page.get_attribute("#drift", "data-intro") == "1"  # 選び直したときも広がる
+        drift_settled(page)
+        assert page.is_visible("#pattern-switch")
+        w.assert_clean()
+    finally:
+        ctx.close()
+
+
+def test_no_chooser_with_reduced_motion(phone, site):
+    page, w = open_page(phone, site["main"])
+    assert not chooser_open(page)
+    assert page.evaluate("document.documentElement.dataset.mode") == "still"
+    assert page.is_hidden("#pattern-switch")
+    assert page.locator("#grid > li").count() == 60
+    w.assert_clean()
+
+
+EG_BOXES = """() => [...document.querySelectorAll('#elastic .eg-col')].map((c, ci) => [...c.querySelectorAll('.eg-tile')].map(b => {
+    const r = b.getBoundingClientRect();
+    return { col: ci, i: +b.dataset.index, id: b.dataset.id, x: r.left, y: r.top, w: r.width, h: r.height,
+             cap: b.parentElement.querySelector('.eg-cap').textContent, src: b.querySelector('img').getAttribute('src') }; }))"""
+
+
+def eg_settled(page, timeout=8000):
+    page.wait_for_selector("#elastic:not([data-moving])", timeout=timeout)
+
+
+@pytest.mark.parametrize("device,cols", [("phone", 3), ("desktop", 7)])
+def test_pattern2_lays_photos_in_columns(pw, site, device, cols):
+    p, browser = pw
+    kw = dict(**p.devices["iPhone 13"]) if device == "phone" else {"viewport": {"width": 1440, "height": 900}}
+    ctx = motion_context(browser, "2", **kw)
+    try:
+        page, w = open_page(ctx, site["main"])
+        assert page.evaluate("document.documentElement.dataset.mode") == "elastic"
+        columns = page.evaluate(EG_BOXES)
+        assert len(columns) == cols
+        flat = sorted((b for c in columns for b in c), key=lambda b: b["i"])
+        assert len(flat) == N_NEWEST and all(b["col"] == b["i"] % cols for b in flat)  # 横に読むと新しい順
+        newest = [x for x in site["doc"]["photos"] if x["year"] == 2026]
+        assert [b["id"] for b in flat] == [x["id"] for x in newest]
+        assert all(abs(b["w"] / b["h"] - 128 / 160) < 0.01 for b in flat)  # 4:5 の枠
+        assert all(b["src"].startswith("mids/2026/") for b in flat)
+        assert flat[0]["cap"] == f"No. {len(site['ids'])} - " + newest[0]["date"][:10].replace("-", ".")
+        first_row = [c[0] for c in columns]
+        assert max(b["y"] for b in first_row) - min(b["y"] for b in first_row) < 1  # 止まっているときは行がそろう
+        # 年・枚数・「表示を選ぶ」は一覧の上
+        r = page.evaluate("(() => { const t = document.getElementById('tab-2026').getBoundingClientRect(), m = document.getElementById('photo-count').getBoundingClientRect(), s = document.getElementById('pattern-switch').getBoundingClientRect(), g = document.querySelector('#elastic .eg-tile').getBoundingClientRect(); return [t.bottom, m.bottom, s.bottom, g.top, t.left]; })()")
+        assert max(r[:3]) < r[3] and r[4] < 120
+        assert page.inner_text("#photo-count") == f"2026年の{N_NEWEST}枚"
+        assert page.is_hidden("#cover")
+        w.assert_clean()
+    finally:
+        ctx.close()
+
+
+def test_pattern2_outer_columns_lag_behind_then_line_up(pw, site):
+    p, browser = pw
+    ctx = motion_context(browser, "2", viewport={"width": 1440, "height": 900})
+    try:
+        page, w = open_page(ctx, site["main"])
+        page.mouse.move(720, 450)
+        before = [c[1]["y"] for c in page.evaluate(EG_BOXES)]
+        for _ in range(4):
+            page.mouse.wheel(0, 150)
+            page.wait_for_timeout(16)
+        page.wait_for_timeout(150)
+        mid = [c[1]["y"] for c in page.evaluate(EG_BOXES)]
+        scrolled = page.evaluate("window.pageYOffset")
+        assert scrolled > 300
+        lagging = [m - (b - scrolled) for b, m in zip(before, mid)]  # 普通にスクロールした位置からの遅れ
+        assert all(x > 1 for x in lagging), lagging  # どの列も遅れてついてくる
+        assert lagging[3] < lagging[0] and lagging[3] < lagging[6]  # 中央の列がいちばん早く、外側ほど遅い
+        assert abs(lagging[0] - lagging[6]) < 2 and lagging[1] < lagging[0]  # 左右対称
+        eg_settled(page)
+        after = [c[1]["y"] for c in page.evaluate(EG_BOXES)]
+        assert max(after) - min(after) < 1  # 止まると行がそろう
+        w.assert_clean()
+    finally:
+        ctx.close()
+
+
+def test_pattern2_open_photo_year_switch_and_restore(pw, site):
+    p, browser = pw
+    ctx = motion_context(browser, "2", **p.devices["iPhone 13"])
+    try:
+        page, w = open_page(ctx, site["main"])
+        page.click(".eg-tile[data-index='4']")
+        page.wait_for_function("document.getElementById('viewer').open")
+        assert counter(page) == f"5 / {N_NEWEST}"
+        assert page.get_attribute("#viewer-img", "data-id") == site["doc"]["photos"][4]["id"]
+        page.click("#viewer-close")
+        assert page.evaluate("document.activeElement.dataset.index") == "4"
+        # 年の切り替え（年は一覧の上に並ぶ）
+        page.click("#tab-2025")
+        assert selected_tab(page) == "2025" and page.locator("#elastic .eg-item").count() == 12
+        # スクロール位置は同じタブの再読込で戻る
+        page.click("#tab-2026")
+        page.evaluate("window.scrollTo(0, 1500)")
+        page.wait_for_timeout(400)
+        page.reload()
+        page.wait_for_selector("html[data-pv=ready]")
+        page.wait_for_timeout(300)
+        assert abs(page.evaluate("window.pageYOffset") - 1500) < 2
+        w.assert_clean()
+    finally:
+        ctx.close()
+
+
+def test_pattern2_keyboard_and_resize(pw, site):
+    p, browser = pw
+    ctx = motion_context(browser, "2", viewport={"width": 1440, "height": 900})
+    try:
+        page, w = open_page(ctx, site["main"])
+        page.focus("#tab-2026")
+        page.keyboard.press("Tab")
+        assert page.evaluate("document.activeElement.id") == "pattern-switch"
+        page.keyboard.press("Tab")
+        assert page.evaluate("document.activeElement.dataset.index") == "0"
+        page.keyboard.press("Enter")
+        page.wait_for_function("document.getElementById('viewer').open")
+        page.keyboard.press("ArrowRight")
+        page.keyboard.press("Escape")
+        assert page.evaluate("document.activeElement.dataset.index") == "1"
+        assert len(page.evaluate(EG_BOXES)) == 7
+        page.set_viewport_size({"width": 800, "height": 900})  # 幅が狭くなると3列に並べ直す
+        page.wait_for_function("document.querySelectorAll('#elastic .eg-col').length === 3")
+        assert page.locator("#elastic .eg-item").count() == N_NEWEST
         w.assert_clean()
     finally:
         ctx.close()

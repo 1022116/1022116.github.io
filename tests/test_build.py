@@ -1,4 +1,4 @@
-"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v11 / 版 11.0）
+"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v12 / 版 12.0）
 
 試験画像を一時ディレクトリに生成し、build → JSON → 検証 → 再生成までの状態遷移とファイル更新を確認する。
 分類: 正常 / 境界 / 異常 / 競合 / 移行 / 回帰
@@ -186,7 +186,7 @@ class TestNormal:
         raw = (project / "data" / "photos.json").read_bytes()
         assert not raw.startswith(b"\xef\xbb\xbf") and b"\r\n" not in raw
         doc = json.loads(raw.decode("utf-8"))
-        assert doc["specId"] == "PV-SPEC-2026-10-v11" and doc["specVersion"] == "11.0"
+        assert doc["specId"] == "PV-SPEC-2026-10-v12" and doc["specVersion"] == "12.0"
         assert doc["count"] == 1 and doc["years"] == [2025] and doc["timezone"] == "Asia/Tokyo"
         e = doc["photos"][0]
         assert set(e) == set(C.REQUIRED_KEYS) | {"mid"}  # mid: 動く一覧の中間画像（仕様 v10）
@@ -844,9 +844,9 @@ class TestRegression:
                  "tests/test_build.py"]
         for rel in files:
             text = (PROJECT_ROOT / rel).read_text(encoding="utf-8-sig")
-            assert "PV-SPEC-2026-10-v11" in text, rel
-            assert "11.0" in text, rel
-        assert C.SPEC_ID == "PV-SPEC-2026-10-v11" and C.SPEC_VERSION == "11.0"
+            assert "PV-SPEC-2026-10-v12" in text, rel
+            assert "12.0" in text, rel
+        assert C.SPEC_ID == "PV-SPEC-2026-10-v12" and C.SPEC_VERSION == "12.0"
         assert json.loads((PROJECT_ROOT / "data" / "photos.json").read_text(encoding="utf-8"))["specId"] == C.SPEC_ID
 
     def test_test_temp_folder_is_outside_the_project(self, tmp_path_factory):
@@ -961,7 +961,7 @@ class TestGuideSync:
     def test_readme_uses_the_guide_commands(self):
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
         for cmd in (
-            "PV-SPEC-2026-10-v11 / version 11.0",
+            "PV-SPEC-2026-10-v12 / version 12.0",
             "Python 3.11",
             "python -m venv .venv",
             r".\.venv\Scripts\Activate.ps1",
@@ -1087,14 +1087,14 @@ class TestFilenameDate:
         assert any("同期仕様ID" in e for e in V.validate(project).errors)
         build_ok(project)
         doc = load_photos(project)
-        assert doc["specId"] == "PV-SPEC-2026-10-v11" and doc["photos"][0]["dateSource"] == "filename"
+        assert doc["specId"] == "PV-SPEC-2026-10-v12" and doc["photos"][0]["dateSource"] == "filename"
         assert run_validate(project).returncode == 0
 
 
 # ===========================================================================
-# 同梱フォント（手書き風の Klee One。画面に出る文字だけを取り出したもの）
+# 同梱フォント（v12: カクカクした DotGothic16。画面に出る文字だけを取り出したもの）
 # ===========================================================================
-FONT = PROJECT_ROOT / "fonts" / "klee-one-subset.woff2"
+FONT = PROJECT_ROOT / "fonts" / "dotgothic16-subset.woff2"
 
 
 def _ui_texts() -> str:
@@ -1110,13 +1110,29 @@ class TestBundledFont:
         assert FONT.is_file() and FONT.read_bytes()[:4] == b"wOF2"
         assert FONT.stat().st_size < 200_000  # 必要な文字だけなので軽い（スマホ回線でもすぐ読める）
         lic = (PROJECT_ROOT / "fonts" / "OFL.txt").read_text(encoding="utf-8")
-        assert "SIL Open Font License" in lic and "Klee Project Authors" in lic
+        assert "SIL Open Font License" in lic and "DotGothic16 Project Authors" in lic
+        assert not (PROJECT_ROOT / "fonts" / "klee-one-subset.woff2").exists()  # v11 までの手書き風フォントは廃止
 
     def test_css_and_html_point_to_the_font(self):
         css = (PROJECT_ROOT / "css" / "style.css").read_text(encoding="utf-8")
         html = (PROJECT_ROOT / "index.html").read_text(encoding="utf-8")
-        assert 'url("../fonts/klee-one-subset.woff2")' in css and 'font-family: "Klee One UI"' in css
-        assert 'href="fonts/klee-one-subset.woff2"' in html
+        assert 'url("../fonts/dotgothic16-subset.woff2")' in css and 'font-family: "DotGothic16 UI"' in css
+        assert 'href="fonts/dotgothic16-subset.woff2"' in html
+        assert "Klee One" not in css
+
+    def test_font_subset_tool_matches_the_css(self):
+        """tools/make_font_subset.py が選ぶ文字と、css の unicode-range が一致する（文言を足したら作り直す）。"""
+        import importlib
+
+        sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+        tool = importlib.import_module("make_font_subset")
+        css = (PROJECT_ROOT / "css" / "style.css").read_text(encoding="utf-8")
+        m = re.search(r'font-family: "DotGothic16 UI";[^}]*unicode-range: ([^;]+);', css)
+        assert m, "DotGothic16 UI の unicode-range がありません"
+        ttlib = pytest.importorskip("fontTools.ttLib", reason="fontTools 未導入（フォントの文字確認をスキップ）")
+        pytest.importorskip("brotli", reason="brotli 未導入（WOFF2 を読めないためスキップ）")
+        cps = sorted(ttlib.TTFont(FONT).getBestCmap())
+        assert m.group(1).strip() == tool.unicode_range([c for c in cps if c >= 0x20])
 
     def test_font_covers_every_character_on_screen(self):
         """画面の文言・日付・かな・英数字がすべてフォントに入っている（欠けると一部だけ別の書体になる）。"""
@@ -1131,7 +1147,7 @@ class TestBundledFont:
     def test_validator_detects_missing_css_asset(self, project):
         build_ok(project)
         assert V.validate(project).ok
-        (project / "fonts" / "klee-one-subset.woff2").unlink()
+        (project / "fonts" / "dotgothic16-subset.woff2").unlink()
         errors = V.validate(project).errors
         assert any("CSS が参照するファイルがありません" in e for e in errors), errors
 

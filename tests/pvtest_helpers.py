@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TOOLS = PROJECT_ROOT / "tools"
-SITE_FILES = ("index.html", "css/style.css", "js/app.js", ".nojekyll", "config.example.json", "requirements.txt", ".gitignore", ".gitattributes", "pytest.ini", "fonts/klee-one-subset.woff2", "fonts/OFL.txt")
+SITE_FILES = ("index.html", "css/style.css", "js/app.js", ".nojekyll", "config.example.json", "requirements.txt", ".gitignore", ".gitattributes", "pytest.ini", "fonts/dotgothic16-subset.woff2", "fonts/OFL.txt")
 
 
 def make_project(dest: Path) -> Path:
@@ -34,8 +34,8 @@ def make_project(dest: Path) -> Path:
     (dest / "mids" / ".gitkeep").touch()
     # 実プロジェクトの公開データに依存しないよう、常に空のギャラリーから始める
     empty = {
-        "specId": "PV-SPEC-2026-10-v11",
-        "specVersion": "11.0",
+        "specId": "PV-SPEC-2026-10-v12",
+        "specVersion": "12.0",
         "schemaVersion": 3,
         "title": "写真",
         "timezone": "Asia/Tokyo",
