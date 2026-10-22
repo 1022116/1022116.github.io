@@ -1,4 +1,4 @@
-"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v9 / 版 9.0）
+"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v10 / 版 10.0）
 
 Playwright（Chromium）でスマートフォン画面をエミュレートし、試験画像から生成したサイトを
 GitHub Pages と同じ「リポジトリ名のサブパス」で配信して確認する。
@@ -138,18 +138,44 @@ class Watch:
         assert self.console_errors == [], self.console_errors
 
 
+# 仕様 v10: ふだんは「動く一覧」、端末の「視差効果を減らす」設定がオンのときは「動かない一覧」（v9 までの一覧）。
+# v9 までの一覧・表紙・スクロール位置の試験は、動かない一覧（reduced_motion="reduce"）で行う。
+STILL = {"reduced_motion": "reduce"}
+MOTION = {"reduced_motion": "no-preference"}
+
+
 @pytest.fixture
 def phone(pw):
+    """動かない一覧（視差効果を減らす設定）のスマホ。"""
     p, browser = pw
-    ctx = browser.new_context(**p.devices["iPhone 13"])
+    ctx = browser.new_context(**p.devices["iPhone 13"], **STILL)
     yield ctx
     ctx.close()
 
 
 @pytest.fixture
 def desktop(pw):
+    """動かない一覧（視差効果を減らす設定）の PC。"""
     _p, browser = pw
-    ctx = browser.new_context(viewport={"width": 1280, "height": 900})
+    ctx = browser.new_context(viewport={"width": 1280, "height": 900}, **STILL)
+    yield ctx
+    ctx.close()
+
+
+@pytest.fixture
+def phone_drift(pw):
+    """動く一覧（ふだんの設定）のスマホ。"""
+    p, browser = pw
+    ctx = browser.new_context(**p.devices["iPhone 13"], **MOTION)
+    yield ctx
+    ctx.close()
+
+
+@pytest.fixture
+def desktop_drift(pw):
+    """動く一覧（ふだんの設定）の PC（マウスあり）。"""
+    _p, browser = pw
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900}, **MOTION)
     yield ctx
     ctx.close()
 
@@ -229,7 +255,7 @@ class Touch:
 def test_portfolio_grid_on_phones(pw, site, device):
     """S-05（v7）: 最初はいちばん新しい年。表紙の写真を元の縦横比で大きく、その下に正方形の2列。各写真に番号と撮影日。"""
     p, browser = pw
-    ctx = browser.new_context(**p.devices[device])
+    ctx = browser.new_context(**p.devices[device], **STILL)
     try:
         page, w = open_page(ctx, site["main"])
         vw = page.evaluate("document.documentElement.clientWidth")
@@ -314,7 +340,7 @@ def test_cover_title_meta_and_catalogue_numbers(phone, site):
 
 def test_title_uses_bundled_handwriting_font(pw, site):
     p, browser = pw
-    ctx = browser.new_context(**p.devices["iPhone 13"])
+    ctx = browser.new_context(**p.devices["iPhone 13"], **STILL)
     try:
         page = ctx.new_page()
         w = Watch(page)
@@ -628,7 +654,7 @@ def test_removed_year_and_broken_storage_do_not_come_back(phone, site):
 
 def test_works_without_storage(pw, site):
     p, browser = pw
-    ctx = browser.new_context(**p.devices["iPhone 13"])
+    ctx = browser.new_context(**p.devices["iPhone 13"], **STILL)
     ctx.add_init_script(
         "Object.defineProperty(window, 'localStorage', {get() { throw new Error('denied'); }});"
         "Object.defineProperty(window, 'sessionStorage', {get() { throw new Error('denied'); }});"
@@ -858,7 +884,7 @@ def test_scenario_add_photos_publish_and_reload(pw, tmp_path):
 
     prepare()
     with serve(tmp_path) as base:
-        ctx = browser.new_context(**p.devices["iPhone 13"])
+        ctx = browser.new_context(**p.devices["iPhone 13"], **STILL)
         try:
             page, w = open_page(ctx, f"{base}/photo-viewer/")
             assert selected_tab(page) == "2025" and page.locator(".tile").count() == 1  # いちばん新しい年
@@ -889,7 +915,7 @@ def test_scenario_add_photos_publish_and_reload(pw, tmp_path):
 # ===========================================================================
 def test_landscape_and_rotation(pw, site):
     p, browser = pw
-    ctx = browser.new_context(**p.devices["iPhone 13 landscape"])
+    ctx = browser.new_context(**p.devices["iPhone 13 landscape"], **STILL)
     try:
         page, w = open_page(ctx, site["main"])
         vw = page.evaluate("document.documentElement.clientWidth")
@@ -965,7 +991,7 @@ def test_rapid_swipes_never_go_out_of_range(phone, site):
 
 def test_slow_mobile_network_shows_loading_then_photos(pw, site):
     p, browser = pw
-    ctx = browser.new_context(**p.devices["Pixel 5"])
+    ctx = browser.new_context(**p.devices["Pixel 5"], **STILL)
     try:
         page = ctx.new_page()
         w = Watch(page)
@@ -1030,7 +1056,7 @@ def test_years_are_only_in_the_top_bar(pw, site):
     """年は上部バーの右側だけに並べる（名前の下の大きな年の一覧はなし）。表紙はバーのすぐ下から。"""
     p, browser = pw
     for device in ("iPhone 13", "desktop"):
-        ctx = browser.new_context(**p.devices["iPhone 13"]) if device != "desktop" else browser.new_context(viewport={"width": 1440, "height": 900})
+        ctx = browser.new_context(**p.devices["iPhone 13"], **STILL) if device != "desktop" else browser.new_context(viewport={"width": 1440, "height": 900}, **STILL)
         try:
             page, w = open_page(ctx, site["main"])
             assert page.locator(".year-index").count() == 0
@@ -1071,7 +1097,7 @@ def test_viewer_controls_do_not_cover_photo(phone, site):
 def test_always_white_background_and_black_text(pw, site, scheme):
     """スマホがダークモードでも、白い背景に黒い文字。選んでいる年は色ではなく下線で示す。"""
     p, browser = pw
-    ctx = browser.new_context(**p.devices["iPhone 13"], color_scheme=scheme)
+    ctx = browser.new_context(**p.devices["iPhone 13"], color_scheme=scheme, **STILL)
     try:
         page, w = open_page(ctx, site["main"])
         colors = page.evaluate(
@@ -1210,8 +1236,8 @@ def test_develop_does_not_break_year_switch_or_broken_images(phone, site):
     assert w.page_errors == []
 
 
-def test_title_daily_is_drawn_in_stroke_order_once_per_tab(phone, site):
-    page = phone.new_page()
+def test_title_daily_is_drawn_in_stroke_order_once_per_tab(phone_drift, site):
+    page = phone_drift.new_page()
     w = Watch(page)
     _patch_doc(page, lambda d: d.update(title="Daily"))
     page.goto(site["main"])
@@ -1283,4 +1309,338 @@ def test_story_in_old_data_is_not_shown(phone, site):
     assert page.get_attribute("#viewer", "aria-describedby") == "viewer-caption"
     page.wait_for_timeout(300)
     assert not [u for u in w.requests if "klee-one.css" in u or "/fonts/klee-one/" in u]
+    w.assert_clean()
+
+
+# ===========================================================================
+# 仕様 v10: 動く一覧（終わりのない平面に散らした写真。視差効果を減らす設定でないとき）
+# ===========================================================================
+DRIFT_BOXES = """sel => [...document.querySelectorAll(sel)].map(e => {
+    const b = e.querySelector('.drift-tile'); const t = b.getBoundingClientRect(); const r = e.getBoundingClientRect();
+    return { i: +b.dataset.index, id: b.dataset.id, x: t.left, y: t.top, w: t.width, h: t.height, bottom: r.bottom,
+             inView: e.classList.contains('is-in') }; })"""
+
+
+def drift_settled(page, timeout=12000):
+    page.wait_for_selector("#drift:not([data-intro])", timeout=timeout)
+    page.wait_for_selector("#drift:not([data-moving])", timeout=timeout)
+
+
+def open_drift(ctx, url):
+    page, w = open_page(ctx, url)
+    drift_settled(page)
+    return page, w
+
+
+def drift_boxes(page, sel="#drift-list > li"):
+    return page.evaluate(DRIFT_BOXES, sel)
+
+
+def on_screen(page, boxes):
+    vw, vh = page.evaluate("[innerWidth, innerHeight]")
+    return [b for b in boxes if b["x"] >= 0 and b["y"] >= 60 and b["x"] + b["w"] <= vw and b["y"] + b["h"] <= vh]
+
+
+def test_drift_scatters_the_years_photos_in_their_own_shapes(phone_drift, site):
+    """動く一覧: 選んだ年の写真を元の縦横比のまま大小ばらばらに散らし、中間画像（mids/）を使う。表紙は出さない。"""
+    page, w = open_drift(phone_drift, site["main"])
+    assert page.evaluate("document.documentElement.dataset.mode") == "drift"
+    assert page.locator("#grid > li").count() == 0 and page.is_hidden("#cover")
+    boxes = drift_boxes(page)
+    assert len(boxes) == N_NEWEST and [b["i"] for b in boxes] == list(range(N_NEWEST))
+    doc = {p["id"]: p for p in site["doc"]["photos"]}
+    newest = [p for p in site["doc"]["photos"] if p["year"] == 2026]
+    assert [b["id"] for b in boxes] == [p["id"] for p in newest]  # 新しい順（番号の大きい順）
+    for b in boxes:
+        p = doc[b["id"]]
+        assert abs(b["w"] / b["h"] - p["width"] / p["height"]) < 0.03  # 元の縦横比
+    widths = {round(b["w"]) for b in boxes if doc[b["id"]]["width"] > doc[b["id"]]["height"]}
+    assert len(widths) >= 2  # 大きさがばらばら
+    srcs = page.eval_on_selector_all("#drift-list img", "els => els.map(e => e.getAttribute('src'))")
+    assert all(s.startswith("mids/2026/") for s in srcs)
+    assert not [u for u in w.requests if "/thumbs/" in u or "/photos/" in u]  # 一覧では中間画像だけ読む
+    caps = page.eval_on_selector_all("#drift-list > li:first-child .drift-line", "els => els.map(e => e.textContent)")
+    assert caps == [f"No. {len(site['ids'])}", newest[0]["date"][:10].replace("-", ".")]
+    # 止まっているときは写真どうし（番号・日付を含む）が重ならない
+    shown = [b for b in boxes if b["inView"]]
+    assert len(shown) >= 3
+    for i, a in enumerate(shown):
+        for b in shown[i + 1:]:
+            overlap_x = min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"])
+            overlap_y = min(a["bottom"], b["bottom"]) - max(a["y"], b["y"])
+            assert overlap_x <= 1 or overlap_y <= 1, (a, b)
+    # ページ自体はスクロールしない（一覧の中で動かす）
+    assert page.evaluate("document.scrollingElement.scrollHeight <= innerHeight + 1")
+    assert page.inner_text("#photo-count") == f"2026年の{N_NEWEST}枚"
+    w.assert_clean()
+
+
+def test_drift_intro_spreads_photos_from_the_center(phone_drift, site):
+    page = phone_drift.new_page()
+    w = Watch(page)
+    page.goto(site["main"])
+    page.wait_for_selector("html[data-pv=ready]")
+    assert page.get_attribute("#drift", "data-intro") == "1"
+    vw, vh = page.evaluate("[innerWidth, innerHeight]")
+
+    def spread():
+        bs = [b for b in drift_boxes(page) if -200 < b["x"] < vw + 200 and -200 < b["y"] < vh + 200]
+        cx = [b["x"] + b["w"] / 2 for b in bs]
+        return max(cx) - min(cx)
+
+    early = spread()
+    drift_settled(page)
+    late = spread()
+    assert late > vw * 0.35 and early < late * 0.6, (early, late)  # 中央に重なった写真が、自分の場所へ広がる
+    w.assert_clean()
+
+
+def test_drift_wheel_moves_each_photo_at_its_own_speed_then_settles(desktop_drift, site):
+    page, w = open_drift(desktop_drift, site["main"])
+    vw, vh = page.evaluate("[innerWidth, innerHeight]")
+    page.mouse.move(vw / 2, vh / 2)  # マウスは中央（マウスによるずれなし）
+    drift_settled(page)
+    before = {b["i"]: b for b in on_screen(page, drift_boxes(page))}
+    assert len(before) >= 4
+    for _ in range(3):
+        page.mouse.wheel(0, 80)
+        page.wait_for_timeout(16)
+    spreads = []
+    for _ in range(12):  # 動いている間、何度か測る（遅い PC でも確かめられるように）
+        page.wait_for_timeout(40)
+        mid = {b["i"]: b for b in drift_boxes(page)}
+        moved = [before[i]["y"] - mid[i]["y"] for i in before]
+        if min(moved) > 0:  # 下へスクロールすると写真は上へ
+            spreads.append(max(moved) - min(moved))
+    assert spreads and max(spreads) > 4, spreads  # 写真ごとに違う速さ（係数 0.5〜1）で追いかける
+    drift_settled(page)
+    after = {b["i"]: b for b in drift_boxes(page)}
+    final = [round(before[i]["y"] - after[i]["y"], 1) for i in before]
+    assert max(final) - min(final) < 1  # 止まるとそろって元の並びに戻る
+    assert abs(final[0] - 120) < 2  # 80 × 3 × 0.5（ホイールの倍率）
+    assert all(abs(before[i]["x"] - after[i]["x"]) < 1 for i in before)
+    assert page.evaluate("Math.round(window.pageYOffset)") == 0  # ページはスクロールしない
+    w.assert_clean()
+
+
+def test_drift_is_endless_in_every_direction(desktop_drift, site):
+    page, w = open_drift(desktop_drift, site["main"])
+    vw, vh = page.evaluate("[innerWidth, innerHeight]")
+    page.mouse.move(vw / 2, vh / 2)
+    for dx, dy in ((0, 400), (400, 0), (0, -400), (-400, 0)):
+        for _ in range(25):
+            page.mouse.wheel(dx, dy)
+        drift_settled(page)
+        shown = [b for b in drift_boxes(page) if b["x"] < vw and b["x"] + b["w"] > 0 and b["y"] < vh and b["y"] + b["h"] > 60]
+        assert len(shown) >= 4, (dx, dy, len(shown))  # どこまで行っても写真が続く
+    w.assert_clean()
+
+
+def test_drift_drag_moves_and_tap_opens_the_photo(phone_drift, site):
+    page, w = open_drift(phone_drift, site["main"])
+    t = Touch(page)
+    before = {b["i"]: b for b in drift_boxes(page)}
+    t.swipe(200, 500, -60, -180, steps=12)  # 指で左上へ動かす
+    page.wait_for_timeout(50)
+    assert not viewer_open(page)  # ドラッグでは開かない
+    drift_settled(page)
+    after = {b["i"]: b for b in drift_boxes(page)}
+    i0 = next(i for i, b in before.items() if b["inView"])
+    assert after[i0]["y"] < before[i0]["y"] - 150 and after[i0]["x"] < before[i0]["x"] - 40
+    target = on_screen(page, drift_boxes(page))[0]
+    page.touchscreen.tap(target["x"] + target["w"] / 2, target["y"] + target["h"] / 2)
+    page.wait_for_function("document.getElementById('viewer').open")
+    assert page.get_attribute("#viewer-img", "data-id") == target["id"]
+    assert counter(page) == f"{target['i'] + 1} / {N_NEWEST}"
+    page.click("#viewer-close")
+    assert page.evaluate("document.activeElement.dataset.index") == str(target["i"])
+    drift_settled(page)
+    again = {b["i"]: b for b in drift_boxes(page)}
+    assert abs(again[target["i"]]["y"] - target["y"]) < 1  # 閉じても一覧は動かない
+    w.assert_clean()
+
+
+def test_drift_keyboard_tab_reveals_photos_and_opens_them(desktop_drift, site):
+    page, w = open_drift(desktop_drift, site["main"])
+    vw, vh = page.evaluate("[innerWidth, innerHeight]")
+    page.mouse.move(vw / 2, vh / 2)
+    page.focus("#tab-2026")
+    for k in range(12):
+        page.keyboard.press("Tab")
+    assert page.evaluate("document.activeElement.classList.contains('drift-tile')")
+    idx = int(page.evaluate("document.activeElement.dataset.index"))
+    assert idx == 11
+    drift_settled(page)
+    r = page.evaluate("(() => { const r = document.activeElement.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; })()")
+    assert r[0] >= 0 and r[2] <= vw and r[1] >= 56 and r[3] <= vh  # フォーカスした写真が見える所まで動く
+    page.keyboard.press("Enter")
+    page.wait_for_function("document.getElementById('viewer').open")
+    assert counter(page) == f"12 / {N_NEWEST}"
+    page.keyboard.press("ArrowRight")
+    assert counter(page) == f"13 / {N_NEWEST}"
+    page.keyboard.press("Escape")
+    assert not viewer_open(page)
+    assert page.evaluate("document.activeElement.dataset.index") == "12"
+    drift_settled(page)
+    r = page.evaluate("(() => { const r = document.activeElement.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; })()")
+    assert r[0] >= 0 and r[2] <= vw and r[1] >= 56 and r[3] <= vh  # 送った先の写真が見える所へ
+    # 矢印キーで一覧を動かす
+    b0 = drift_boxes(page)[12]
+    page.keyboard.press("ArrowDown")
+    drift_settled(page)
+    assert abs((b0["y"] - drift_boxes(page)[12]["y"]) - 140) < 2
+    w.assert_clean()
+
+
+def test_drift_year_switch_replays_the_spread(phone_drift, site):
+    page, w = open_drift(phone_drift, site["main"])
+    page.click("#tab-2025")
+    assert page.get_attribute("#drift", "data-intro") == "1"
+    assert page.get_attribute("#drift-list", "aria-label") == "2025年の写真"
+    drift_settled(page)
+    ids = [b["id"] for b in drift_boxes(page)]
+    assert ids == [p["id"] for p in site["doc"]["photos"] if p["year"] == 2025]
+    assert page.inner_text("#photo-count") == "2025年の12枚"
+    assert selected_tab(page) == "2025"
+    w.assert_clean()
+
+
+def test_drift_fills_the_screen_with_copies_when_few_photos(phone_drift, site):
+    """写真が少ない年は並びを複製して画面を埋める。複製は読み上げ・Tab の対象にしない。"""
+    page, w = open_drift(phone_drift, site["main"])
+    page.click("#tab-2023")
+    drift_settled(page)
+    assert page.locator("#drift-list > li").count() == 2
+    copies = page.locator("#drift-copies .drift-item")
+    assert copies.count() >= 2
+    assert page.get_attribute("#drift-copies", "aria-hidden") == "true"
+    assert page.eval_on_selector_all("#drift-copies .drift-tile", "els => els.every(e => e.tabIndex === -1)")
+    assert page.eval_on_selector_all("#drift-copies img", "els => els.every(e => e.alt === '')")
+    vw, vh = page.evaluate("[innerWidth, innerHeight]")
+    every = drift_boxes(page, "#drift .drift-item")
+    shown = [b for b in every if b["x"] < vw and b["x"] + b["w"] > 0 and b["y"] < vh and b["y"] + b["h"] > 60]
+    assert len(shown) >= 3
+    # 複製をタップしても、その写真が開く
+    c = next(b for b in drift_boxes(page, "#drift-copies .drift-item") if 0 <= b["x"] and b["x"] + b["w"] <= vw and 60 <= b["y"] and b["y"] + b["h"] <= vh)
+    page.touchscreen.tap(c["x"] + c["w"] / 2, c["y"] + c["h"] / 2)
+    page.wait_for_function("document.getElementById('viewer').open")
+    assert page.get_attribute("#viewer-img", "data-id") == c["id"] and counter(page) == f"{c['i'] + 1} / 2"
+    before = drift_boxes(page, "#drift .drift-item")
+    page.click("#viewer-close")
+    page.wait_for_timeout(300)
+    drift_settled(page)
+    after = drift_boxes(page, "#drift .drift-item")
+    assert [(round(b["x"]), round(b["y"])) for b in after] == [(round(b["x"]), round(b["y"])) for b in before]  # 閉じても動かない
+    w.assert_clean()
+
+
+def test_drift_position_is_restored_after_reload_without_the_spread(phone_drift, site):
+    page, w = open_drift(phone_drift, site["main"])
+    Touch(page).swipe(200, 500, -40, -260, steps=12)
+    drift_settled(page)
+    page.wait_for_timeout(300)  # 位置の保存（止まってから 200ms）
+    before = {b["i"]: (round(b["x"]), round(b["y"])) for b in drift_boxes(page) if b["inView"]}
+    assert len(before) >= 3
+    page.reload()
+    page.wait_for_selector("html[data-pv=ready]")
+    assert page.get_attribute("#drift", "data-intro") is None  # 復元したときは広がる動きをしない
+    drift_settled(page)
+    after = {b["i"]: (round(b["x"]), round(b["y"])) for b in drift_boxes(page)}
+    assert all(abs(before[i][0] - after[i][0]) <= 1 and abs(before[i][1] - after[i][1]) <= 1 for i in before)
+    # 新しいタブでは最初から（広がる動きあり）
+    other = phone_drift.new_page()
+    other.goto(site["main"])
+    other.wait_for_selector("html[data-pv=ready]")
+    assert other.get_attribute("#drift", "data-intro") == "1"
+    w.assert_clean()
+
+
+def test_drift_mouse_shifts_photos_by_their_size(desktop_drift, site):
+    page, w = open_drift(desktop_drift, site["main"])
+    vw, vh = page.evaluate("[innerWidth, innerHeight]")
+    page.mouse.move(vw / 2, vh / 2)
+    drift_settled(page)
+    before = {b["i"]: b for b in on_screen(page, drift_boxes(page))}
+    page.mouse.move(vw - 1, vh / 2, steps=8)
+    drift_settled(page)
+    after = {b["i"]: b for b in drift_boxes(page)}
+    ratios = [(after[i]["x"] - before[i]["x"]) / before[i]["w"] for i in before]
+    assert all(abs(r - 0.25) < 0.03 for r in ratios), ratios  # 端で写真の幅の 1/4（大きい写真ほど大きくずれる）
+    assert all(abs(after[i]["y"] - before[i]["y"]) < 1 for i in before)
+    w.assert_clean()
+
+
+def test_drift_develops_photos_and_shows_captions_as_they_appear(phone_drift, site):
+    page, w = open_drift(phone_drift, site["main"])
+    page.wait_for_timeout(1200)  # 番号・日付が出そろうまで
+    shown = page.eval_on_selector_all(
+        "#drift-list > li.is-in", "els => els.map(e => [e.querySelector('.drift-tile').classList.contains('is-developed') || !e.querySelector('img').complete, getComputedStyle(e.querySelector('.drift-line > span')).transform])"
+    )
+    assert shown and all(d for d, _ in shown)
+    assert all(t in ("none", "matrix(1, 0, 0, 1, 0, 0)") for _, t in shown)
+    hidden = page.eval_on_selector_all(
+        "#drift-list > li:not(.is-in)", "els => els.map(e => [e.querySelector('.drift-tile').dataset.seen || '', getComputedStyle(e.querySelector('.drift-line > span')).transform])"
+    )
+    far = [h for h in hidden if h[0] != "1"]
+    assert far and all(t != "none" for _, t in far)  # まだ画面に入っていない写真は番号・日付も隠れている
+    # Tab で遠くの写真へ移ると、見える所まで動いて現像される
+    page.evaluate("document.querySelector('#drift-list .drift-tile[data-index=\"40\"]').focus()")
+    page.wait_for_selector("#drift-list .drift-tile[data-index='40'].is-developed", timeout=10000)
+    page.wait_for_timeout(2600)
+    st = page.evaluate("(() => { const s = getComputedStyle(document.querySelector('#drift-list .drift-tile[data-index=\"40\"] img')); return [s.opacity, s.filter]; })()")
+    assert st == ["1", "none"]
+    w.assert_clean()
+
+
+def test_drift_broken_image_is_shown_and_year_switch_still_works(phone_drift, site):
+    page = phone_drift.new_page()
+    w = Watch(page)
+    p0 = site["doc"]["photos"][0]
+    page.route(f"**/{p0['mid']}", lambda r: r.fulfill(status=404, body=""))
+    page.goto(site["main"])
+    page.wait_for_selector("#drift-list .drift-tile[data-index='0'].is-broken.is-developed", timeout=10000)
+    assert page.is_visible("#drift-list .drift-tile[data-index='0'] .tile-fallback")
+    page.click("#tab-2025")
+    drift_settled(page)
+    assert page.locator("#drift-list > li").count() == 12
+    assert w.page_errors == []
+
+
+def test_reduced_motion_setting_switches_between_the_two_lists(phone_drift, site):
+    """視差効果を減らす設定にすると、その場で動かない一覧（表紙＋正方形）に切り替わり、戻すと動く一覧に戻る。"""
+    page, w = open_drift(phone_drift, site["main"])
+    page.emulate_media(reduced_motion="reduce")
+    page.wait_for_function("document.documentElement.dataset.mode === 'still'")
+    assert page.locator("#grid > li").count() == 60 and page.locator("#drift .drift-item").count() == 0
+    assert page.is_visible("#cover") and page.is_visible("#grid")
+    assert page.evaluate("document.scrollingElement.scrollHeight > innerHeight * 2")  # 縦にスクロールする一覧
+    page.click(".tile[data-index='3']")
+    assert counter(page) == f"4 / {N_NEWEST}"
+    page.click("#viewer-close")
+    page.emulate_media(reduced_motion="no-preference")
+    page.wait_for_function("document.documentElement.dataset.mode === 'drift'")
+    drift_settled(page)
+    assert page.locator("#drift-list > li").count() == N_NEWEST and page.locator("#grid > li").count() == 0
+    assert page.is_hidden("#cover")
+    w.assert_clean()
+
+
+def test_drift_empty_and_single_photo(phone_drift, site):
+    page, w = open_page(phone_drift, site["empty"], state="empty")
+    assert "写真はまだありません" in page.inner_text("#status")
+    assert page.locator("#drift .drift-item").count() == 0
+    w.assert_clean()
+    page, w = open_drift(phone_drift, site["single"])
+    assert page.locator("#drift-list > li").count() == 1
+    vw, vh = page.evaluate("[innerWidth, innerHeight]")
+    every = drift_boxes(page, "#drift .drift-item")
+    assert len([b for b in every if b["x"] < vw and b["x"] + b["w"] > 0 and b["y"] < vh and b["y"] + b["h"] > 60]) >= 2
+    w.assert_clean()
+
+
+def test_drift_relative_urls_and_no_external_requests(phone_drift, site):
+    page, w = open_drift(phone_drift, site["main"])
+    Touch(page).swipe(200, 500, 0, -400, steps=10)
+    drift_settled(page)
+    assert w.requests and all(u.startswith(site["main"]) for u in w.requests), [u for u in w.requests if not u.startswith(site["main"])]
     w.assert_clean()

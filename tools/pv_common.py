@@ -1,4 +1,4 @@
-"""写真ビューア 共通定義（同期仕様ID PV-SPEC-2026-10-v9 / 版 9.0）
+"""写真ビューア 共通定義（同期仕様ID PV-SPEC-2026-10-v10 / 版 10.0）
 
 build_gallery.py と validate_build.py が共有する定数・日時処理・排他ロック。
 """
@@ -10,13 +10,15 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-SPEC_ID = "PV-SPEC-2026-10-v9"
-SPEC_VERSION = "9.0"
+SPEC_ID = "PV-SPEC-2026-10-v10"
+SPEC_VERSION = "10.0"
 SCHEMA_VERSION = 3
 
 # S-03 / S-04（仕様で固定。設定ファイルからは変更できない）
 THUMB_SIZE = 480
 DETAIL_MAX_SIDE = 1920
+# 動く一覧（仕様 v10）で使う中間画像。元の縦横比・長辺最大800px（小さい写真は拡大しない）
+MID_MAX_SIDE = 800
 
 # Asia/Tokyo は 1951 年以降 夏時間がなく +09:00 固定。
 # Windows では zoneinfo に tzdata パッケージが必要になるため、固定オフセットで扱う。
@@ -27,7 +29,7 @@ REQUIRED_KEYS = ("id", "src", "thumb", "date", "year", "width", "height", "alt",
 DATE_SOURCES = ("exif", "filename", "mtime", "legacy")
 
 # 公開JSON内のパス（POSIX相対形式・WebPのみ）
-PUBLIC_PATH_RE = re.compile(r"^(photos|thumbs)/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.webp$")
+PUBLIC_PATH_RE = re.compile(r"^(photos|thumbs|mids)/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.webp$")
 # YYYY-MM-DDTHH:MM:SS+09:00（秒まで・Asia/Tokyoのオフセット付き）
 ISO_JST_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+09:00$")
 

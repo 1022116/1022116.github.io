@@ -1,7 +1,7 @@
 ﻿<#
 .SYNOPSIS
   写真ビューアを生成・検証・試験してから GitHub Pages へ公開します。
-  同期仕様ID PV-SPEC-2026-10-v9 / 版 9.0
+  同期仕様ID PV-SPEC-2026-10-v10 / 版 10.0
 
 .DESCRIPTION
   次の順に実行し、どこかで失敗したら commit / push は行いません（S-10）。
@@ -58,14 +58,14 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$SpecId = 'PV-SPEC-2026-10-v9'
-$SpecVersion = '9.0'
+$SpecId = 'PV-SPEC-2026-10-v10'
+$SpecVersion = '10.0'
 $ExitFailed = 1
 $ExitGuard = 2
 $ExitBusy = 75
 
 # 公開対象（これ以外のファイルは publish.ps1 では commit しない）
-$PublishPaths = @('index.html', 'css', 'js', 'fonts', 'data', 'photos', 'thumbs', '.nojekyll')
+$PublishPaths = @('index.html', 'css', 'js', 'fonts', 'data', 'photos', 'thumbs', 'mids', '.nojekyll')
 $ForbiddenExtensions = @('.jpg', '.jpeg', '.png', '.gif', '.heic', '.heif', '.tif', '.tiff', '.bmp', '.dng', '.raw',
     '.cr2', '.nef', '.arw', '.mov', '.mp4', '.m4v', '.avi', '.zip', '.pem', '.key', '.pfx', '.env')
 $MaxFileBytes = 25MB
@@ -274,11 +274,11 @@ function Invoke-Publish {
         $name = [System.IO.Path]::GetFileName($f)
         if ($f -like 'source_photos/*') { $problems += "$f （原本フォルダー）" ; continue }
         if ($ForbiddenExtensions -contains $ext) { $problems += "$f （公開禁止の拡張子 $ext）" ; continue }
-        if (($f -like 'photos/*' -or $f -like 'thumbs/*') -and $ext -ne '.webp' -and $name -ne '.gitkeep') {
+        if (($f -like 'photos/*' -or $f -like 'thumbs/*' -or $f -like 'mids/*') -and $ext -ne '.webp' -and $name -ne '.gitkeep') {
             $problems += "$f （公開画像は .webp のみ）" ; continue
         }
         $full = Join-Path $Root $f
-        if ((Test-Path -LiteralPath $full) -and ((Get-Item -LiteralPath $full).Length -gt $MaxFileBytes)) {
+        if ((Test-Path -LiteralPath $full) -and ((Get-Item -LiteralPath $full -Force).Length -gt $MaxFileBytes)) {
             $problems += "$f （25MB を超えるファイル）"
         }
     }

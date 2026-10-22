@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""公開出力一式の動的整合性検証（同期仕様ID PV-SPEC-2026-10-v9 / 版 9.0）
+"""公開出力一式の動的整合性検証（同期仕様ID PV-SPEC-2026-10-v10 / 版 10.0）
 
 検証内容:
   JSON構文（UTF-8・BOMなし）/ 同期仕様ID / 必須キーと型 / 旧fiscalYearの混入 /
   date（ISO 8601・+09:00）と year の一致（1月1日始まり）/ 並び順（新しい順・同日時は相対パス昇順）/
   ID・パスの重複 / src・thumb のPOSIX相対パスと実在 / 画像の実読込 /
   サムネイル 480×480 / 詳細画像の最大辺 1920 以下と width・height の一致 /
+  中間画像 mid（任意・仕様 v10）の長辺 800 以下と縦横比の一致 /
   公開画像のメタデータ（EXIF・XMP・ICC）なし / 参照されていない公開画像（孤立ファイル）なし / 表紙の写真が一覧にあること /
   サイトファイルの存在・外部URL依存なし・ルート相対パスなし /
   設定ファイル（thumbSize=480・detailMaxEdge=1920 の仕様固定値、値の型）
@@ -110,7 +111,9 @@ def _check_image(root: Path, photo: dict):
     """1件分の画像検証。エラーメッセージのリストを返す。"""
     errs = []
     pid = photo.get("id")
-    for kind in ("src", "thumb"):
+    for kind in ("src", "thumb", "mid"):
+        if kind == "mid" and "mid" not in photo:
+            continue  # 中間画像は任意（旧データの移行など）。生成スクリプトは必ず作る
         rel = photo[kind]
         p = root / rel
         if not p.is_file():
@@ -137,6 +140,15 @@ def _check_image(root: Path, photo: dict):
         if kind == "thumb":
             if (w, h) != (C.THUMB_SIZE, C.THUMB_SIZE):
                 errs.append(f"[{pid}] サムネイルが {C.THUMB_SIZE}×{C.THUMB_SIZE} ではありません: {w}×{h}")
+        elif kind == "mid":
+            pw, ph = photo.get("width"), photo.get("height")
+            if max(w, h) > C.MID_MAX_SIDE:
+                errs.append(f"[{pid}] 中間画像の長辺が {C.MID_MAX_SIDE}px を超えています: {w}×{h}")
+            if isinstance(pw, int) and isinstance(ph, int) and pw > 0 and ph > 0:
+                if w > pw or h > ph:
+                    errs.append(f"[{pid}] 中間画像が詳細画像より大きくなっています: {w}×{h} / 詳細 {pw}×{ph}")
+                elif abs(w * ph - h * pw) > max(pw, ph):  # 丸めによる1px程度の差は許容
+                    errs.append(f"[{pid}] 中間画像の縦横比が詳細画像と一致しません: {w}×{h} / 詳細 {pw}×{ph}")
         else:
             if max(w, h) > C.DETAIL_MAX_SIDE:
                 errs.append(f"[{pid}] 詳細画像の長辺が {C.DETAIL_MAX_SIDE}px を超えています: {w}×{h}")
@@ -230,7 +242,7 @@ def validate(
 
     # --- 各エントリの必須キー・型・日付 -------------------------------------------
     valid = []
-    seen_ids, seen_src, seen_thumb = {}, {}, {}
+    seen_ids, seen_src, seen_thumb, seen_mid = {}, {}, {}, {}
     for i, p in enumerate(photos):
         tag = f"photos[{i}]"
         if not isinstance(p, dict):
@@ -246,7 +258,9 @@ def validate(
         if not isinstance(pid, str) or not re.fullmatch(r"[0-9a-f]{8,64}", pid):
             res.error(f"{tag} id の形式が不正です")
             ok = False
-        for kind, prefix in (("src", "photos"), ("thumb", "thumbs")):
+        for kind, prefix in (("src", "photos"), ("thumb", "thumbs"), ("mid", "mids")):
+            if kind == "mid" and "mid" not in p:
+                continue
             problem = _valid_public_path(p[kind], prefix)
             if problem:
                 res.error(f"{tag} {kind}={p[kind]!r}: {problem}")
@@ -277,8 +291,8 @@ def validate(
         if dt is not None and isinstance(p["year"], int) and C.calendar_year(dt) != p["year"]:
             res.error(f"{tag} year({p['year']}) が date の西暦年({C.calendar_year(dt)})と一致しません（S-01）")
             ok = False
-        for seen, key in ((seen_ids, "id"), (seen_src, "src"), (seen_thumb, "thumb")):
-            v = p[key]
+        for seen, key in ((seen_ids, "id"), (seen_src, "src"), (seen_thumb, "thumb"), (seen_mid, "mid")):
+            v = p.get(key)
             if isinstance(v, str):
                 if v in seen:
                     res.error(f"{tag} {key} が重複しています: {v}（photos[{seen[v]}] と同じ）")
@@ -341,14 +355,16 @@ def validate(
         referenced = set()
         for p in photos:
             if isinstance(p, dict):
-                for k in ("src", "thumb"):
+                for k in ("src", "thumb", "mid"):
                     if isinstance(p.get(k), str):
                         referenced.add(p[k])
+        uses_mid = any(isinstance(p, dict) and "mid" in p for p in photos)
         orphans = []
-        for top in ("photos", "thumbs"):
+        for top in ("photos", "thumbs", "mids"):
             base = root / top
             if not base.is_dir():
-                res.error(f"出力ディレクトリがありません: {top}/")
+                if top != "mids" or uses_mid:
+                    res.error(f"出力ディレクトリがありません: {top}/")
                 continue
             for dirpath, _dirs, files in os.walk(base):
                 for name in files:

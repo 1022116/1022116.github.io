@@ -26,15 +26,16 @@ def make_project(dest: Path) -> Path:
         if src.exists():
             (dest / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest / rel)
-    for d in ("source_photos", "photos", "thumbs", "data"):
+    for d in ("source_photos", "photos", "thumbs", "mids", "data"):
         (dest / d).mkdir(exist_ok=True)
     (dest / "source_photos" / ".gitkeep").touch()
     (dest / "photos" / ".gitkeep").touch()
     (dest / "thumbs" / ".gitkeep").touch()
+    (dest / "mids" / ".gitkeep").touch()
     # 実プロジェクトの公開データに依存しないよう、常に空のギャラリーから始める
     empty = {
-        "specId": "PV-SPEC-2026-10-v9",
-        "specVersion": "9.0",
+        "specId": "PV-SPEC-2026-10-v10",
+        "specVersion": "10.0",
         "schemaVersion": 3,
         "title": "写真",
         "timezone": "Asia/Tokyo",

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""写真ビューア 生成スクリプト（同期仕様ID PV-SPEC-2026-10-v9 / 版 9.0）
+"""写真ビューア 生成スクリプト（同期仕様ID PV-SPEC-2026-10-v10 / 版 10.0）
 
 原本フォルダー（既定: source_photos/）を再帰走査し、公開用の
   photos/<年>/<id>.webp   … 詳細画像（元の縦横比・長辺最大1920px・メタデータなし）
   thumbs/<年>/<id>.webp   … サムネイル（EXIF回転補正後・中央切り抜き 480×480・メタデータなし）
+  mids/<年>/<id>.webp     … 中間画像（元の縦横比・長辺最大800px・メタデータなし。動く一覧で使う。仕様 v10）
   data/photos.json        … 一覧データ（新しい撮影日時順・同日時は相対パス昇順）
 を生成する。
 
@@ -53,7 +54,7 @@ Image.MAX_IMAGE_PIXELS = 250_000_000
 log = logging.getLogger("build_gallery")
 
 BUILD_ALGO_VERSION = 1  # 変換処理を変えたら上げる（キャッシュ無効化）
-SWAP_TARGETS = ("photos", "thumbs", "data/photos.json")
+SWAP_TARGETS = ("photos", "thumbs", "mids", "data/photos.json")
 IGNORED_NAMES = {"thumbs.db", "desktop.ini", ".ds_store", "icon\r"}
 IGNORED_DIRS = {"@eadir", "__macosx", "$recycle.bin", "system volume information"}
 
@@ -106,6 +107,7 @@ def settings_key(cfg: dict) -> str:
             "algo": BUILD_ALGO_VERSION,
             "thumb": C.THUMB_SIZE,
             "detail": C.DETAIL_MAX_SIDE,
+            "mid": C.MID_MAX_SIDE,
             "tq": cfg["thumbQuality"],
             "dq": cfg["detailQuality"],
         },
@@ -124,7 +126,7 @@ def resolve_source_dir(root: Path, cfg: dict) -> Path:
         raise BuildError(f"原本フォルダーがありません: {src}")
     if src == root_r or src in root_r.parents:
         raise BuildError(f"原本フォルダーにプロジェクト全体を含めることはできません: {src}")
-    for name in ("photos", "thumbs", "data", ".build"):
+    for name in ("photos", "thumbs", "mids", "data", ".build"):
         out = (root_r / name).resolve()
         if src == out or out in src.parents:
             raise BuildError(f"原本フォルダーを出力先（{name}/）の中に置くことはできません: {src}")
@@ -240,11 +242,20 @@ def _save_webp(img: Image.Image, path: Path, quality: int) -> None:
     img.save(path, "WEBP", quality=quality, method=4)
 
 
-def detail_size(w: int, h: int) -> tuple:
-    scale = min(1.0, C.DETAIL_MAX_SIDE / max(w, h))
-    tw = max(1, min(C.DETAIL_MAX_SIDE, round(w * scale)))
-    th = max(1, min(C.DETAIL_MAX_SIDE, round(h * scale)))
+def fit_size(w: int, h: int, max_side: int) -> tuple:
+    """元の縦横比のまま長辺を max_side 以下にした大きさ（拡大はしない）。"""
+    scale = min(1.0, max_side / max(w, h))
+    tw = max(1, min(max_side, round(w * scale)))
+    th = max(1, min(max_side, round(h * scale)))
     return tw, th
+
+
+def detail_size(w: int, h: int) -> tuple:
+    return fit_size(w, h, C.DETAIL_MAX_SIDE)
+
+
+def mid_size(w: int, h: int) -> tuple:
+    return fit_size(w, h, C.MID_MAX_SIDE)
 
 
 def process_one(task: dict) -> dict:
@@ -265,6 +276,8 @@ def process_one(task: dict) -> dict:
             img = ImageOps.exif_transpose(im)
         img = _normalize_mode(_to_srgb(img))
         detail = img if img.size == (tw, th) else img.resize((tw, th), Image.LANCZOS)
+        mw, mh = mid_size(ow, oh)
+        mid = detail if detail.size == (mw, mh) else detail.resize((mw, mh), Image.LANCZOS)  # 詳細画像から縮小（速い）
         thumb = ImageOps.fit(img, (C.THUMB_SIZE, C.THUMB_SIZE), Image.LANCZOS, centering=(0.5, 0.5))
         if exif_dt is not None:
             date, source = exif_dt, "exif"
@@ -276,10 +289,12 @@ def process_one(task: dict) -> dict:
     year = C.calendar_year(date)
     rel_detail = f"photos/{year}/{task['id']}.webp"
     rel_thumb = f"thumbs/{year}/{task['id']}.webp"
+    rel_mid = f"mids/{year}/{task['id']}.webp"
     staging = Path(task["staging"])
     try:
         _save_webp(detail, staging / rel_detail, task["dq"])
         _save_webp(thumb, staging / rel_thumb, task["tq"])
+        _save_webp(mid, staging / rel_mid, task["tq"])
     except Exception as exc:
         return {"ok": False, "fatal": True, "rel": task["rel"], "error": f"書込み失敗 {exc.__class__.__name__}: {exc}"}
     return {
@@ -289,6 +304,7 @@ def process_one(task: dict) -> dict:
         "id": task["id"],
         "src": rel_detail,
         "thumb": rel_thumb,
+        "mid": rel_mid,
         "width": detail.size[0],
         "height": detail.size[1],
         "date": C.to_iso_jst(date),
@@ -603,10 +619,10 @@ def build(
     staging = root / ".build" / f"staging-{stamp}"
     try:
         staging.mkdir(parents=True)
-        for d in ("photos", "thumbs", "data"):
+        for d in ("photos", "thumbs", "mids", "data"):
             (staging / d).mkdir()
-        (staging / "photos" / ".gitkeep").touch()
-        (staging / "thumbs" / ".gitkeep").touch()
+        for d in ("photos", "thumbs", "mids"):
+            (staging / d / ".gitkeep").touch()
     except OSError as exc:
         raise BuildError(f"一時ディレクトリを作成できません（書込み不可）: {staging} ({exc})")
 
@@ -639,6 +655,7 @@ def build(
                 "id": r["id"],
                 "src": r["src"],
                 "thumb": r["thumb"],
+                "mid": r["mid"],
                 "date": r["date"],
                 "year": C.calendar_year(C.parse_iso(r["date"])),
                 "width": r["width"],
@@ -676,6 +693,7 @@ def build(
                     "id": r["id"],
                     "src": r["src"],
                     "thumb": r["thumb"],
+                    "mid": r["mid"],
                     "width": r["width"],
                     "height": r["height"],
                     "exifDate": r["exifDate"],
@@ -726,7 +744,11 @@ def _convert_all(root: Path, staging: Path, unique: list, cfg: dict, key: str, j
     for rel, path, digest in unique:
         pid = digest[:16]
         hit = cache.get(digest)
-        if hit and hit.get("id") == pid and (root / hit["src"]).is_file() and (root / hit["thumb"]).is_file():
+        if (
+            hit
+            and hit.get("id") == pid
+            and all(isinstance(hit.get(k), str) and (root / hit[k]).is_file() for k in ("src", "thumb", "mid"))
+        ):
             try:
                 if hit.get("exifDate"):
                     date, source = C.parse_iso(hit["exifDate"]), "exif"
@@ -734,8 +756,10 @@ def _convert_all(root: Path, staging: Path, unique: list, cfg: dict, key: str, j
                     date, source = fallback_date(rel, path)
                 year = C.calendar_year(date)
                 rel_detail, rel_thumb = f"photos/{year}/{pid}.webp", f"thumbs/{year}/{pid}.webp"
+                rel_mid = f"mids/{year}/{pid}.webp"
                 _link_or_copy(root / hit["src"], staging / rel_detail)
                 _link_or_copy(root / hit["thumb"], staging / rel_thumb)
+                _link_or_copy(root / hit["mid"], staging / rel_mid)
                 results.append(
                     {
                         "ok": True,
@@ -744,6 +768,7 @@ def _convert_all(root: Path, staging: Path, unique: list, cfg: dict, key: str, j
                         "id": pid,
                         "src": rel_detail,
                         "thumb": rel_thumb,
+                        "mid": rel_mid,
                         "width": hit["width"],
                         "height": hit["height"],
                         "date": C.to_iso_jst(date),

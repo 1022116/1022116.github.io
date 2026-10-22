@@ -1,4 +1,4 @@
-"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v9 / 版 9.0）
+"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v10 / 版 10.0）
 
 試験画像を一時ディレクトリに生成し、build → JSON → 検証 → 再生成までの状態遷移とファイル更新を確認する。
 分類: 正常 / 境界 / 異常 / 競合 / 移行 / 回帰
@@ -59,7 +59,7 @@ def by_source(project: Path) -> dict:
 
 def output_snapshot(project: Path) -> dict:
     out = {}
-    for d in ("photos", "thumbs", "data"):
+    for d in ("photos", "thumbs", "mids", "data"):
         for k, v in snapshot(project / d).items():
             out[f"{d}/{k}"] = v[0]
     return out
@@ -186,14 +186,15 @@ class TestNormal:
         raw = (project / "data" / "photos.json").read_bytes()
         assert not raw.startswith(b"\xef\xbb\xbf") and b"\r\n" not in raw
         doc = json.loads(raw.decode("utf-8"))
-        assert doc["specId"] == "PV-SPEC-2026-10-v9" and doc["specVersion"] == "9.0"
+        assert doc["specId"] == "PV-SPEC-2026-10-v10" and doc["specVersion"] == "10.0"
         assert doc["count"] == 1 and doc["years"] == [2025] and doc["timezone"] == "Asia/Tokyo"
         e = doc["photos"][0]
-        assert set(e) == set(C.REQUIRED_KEYS)
+        assert set(e) == set(C.REQUIRED_KEYS) | {"mid"}  # mid: 動く一覧の中間画像（仕様 v10）
         assert "fiscalYear" not in raw.decode("utf-8")
         assert C.ISO_JST_RE.match(e["date"])
-        for k in ("src", "thumb"):
+        for k in ("src", "thumb", "mid"):
             assert C.PUBLIC_PATH_RE.match(e[k]) and "\\" not in e[k] and not e[k].startswith("/")
+        assert e["mid"] == f"mids/2025/{e['id']}.webp"
         assert "家族" not in e["src"] and "写真 1" not in raw.decode("utf-8")  # 原本のパス名を公開しない
         assert "撮影の写真" in e["alt"] and "撮影の写真".encode("utf-8") in raw  # ensure_ascii=False
 
@@ -453,6 +454,12 @@ class TestAbnormal:
             "width_mismatch",
             "external_url",
             "root_relative_url",
+            "mid_too_large",
+            "mid_aspect",
+            "mid_missing_file",
+            "mid_wrong_folder",
+            "mid_orphan",
+            "mid_metadata",
         ],
     )
     def test_validator_detects_inconsistency(self, project, case):
@@ -509,6 +516,26 @@ class TestAbnormal:
         elif case == "width_mismatch":
             p0["width"] += 1
             expect = "width/height"
+        elif case == "mid_too_large":
+            Image.new("RGB", (1000, 800)).save(project / p0["mid"], "WEBP")
+            expect = "中間画像の長辺が 800px"
+        elif case == "mid_aspect":
+            Image.new("RGB", (800, 800)).save(project / p0["mid"], "WEBP")
+            expect = "中間画像の縦横比"
+        elif case == "mid_missing_file":
+            (project / p0["mid"]).unlink()
+            expect = "mid の参照先がありません"
+        elif case == "mid_wrong_folder":
+            p0["mid"] = p0["thumb"]
+            expect = "'mids/' 配下ではありません"
+        elif case == "mid_orphan":
+            shutil.copy2(project / p0["mid"], project / "mids" / "2025" / "stray.webp")
+            expect = "参照されていないファイル"
+        elif case == "mid_metadata":
+            from pvtest_helpers import exif_bytes
+
+            Image.new("RGB", (800, 640)).save(project / p0["mid"], "WEBP", exif=exif_bytes(gps=True))
+            expect = "mid にメタデータ"
         elif case == "external_url":
             html = (project / "index.html").read_text(encoding="utf-8")
             (project / "index.html").write_text(
@@ -550,7 +577,7 @@ class TestAbnormal:
         assert output_snapshot(project) == before
         assert not list((project / ".build").glob("staging-*"))
 
-    @pytest.mark.parametrize("fail_at", [1, 2, 3, 4, 5, 6])
+    @pytest.mark.parametrize("fail_at", [1, 2, 3, 4, 5, 6, 7, 8])
     def test_swap_failure_rolls_back_to_previous(self, project, monkeypatch, fail_at):
         make_image(src(project) / "a.jpg", exif_dt="2025:01:01 10:00:00")
         build_ok(project)
@@ -735,6 +762,7 @@ def to_legacy(doc: dict) -> dict:
         q.pop("year")
         q["fiscalYear"] = fiscal_year(q["date"])  # 旧仕様: 4月始まりの年度
         q.pop("dateSource", None)
+        q.pop("mid", None)  # 旧仕様の時代には中間画像（v10）はない
         legacy.append(q)
     return {"photos": legacy, "fiscalYears": sorted({q["fiscalYear"] for q in legacy}, reverse=True)}
 
@@ -758,6 +786,7 @@ class TestMigration:
         build_ok(project)
         modern = load_photos(project)
         write_json(project, to_legacy(modern))
+        shutil.rmtree(project / "mids")  # 旧仕様の時代の公開フォルダーには mids/ がない
         assert run_validate(project).returncode == 1  # 旧形式は不合格
         r = run_build(project, "--migrate-legacy")
         assert r.returncode == 0, r.stdout
@@ -815,9 +844,9 @@ class TestRegression:
                  "tests/test_build.py"]
         for rel in files:
             text = (PROJECT_ROOT / rel).read_text(encoding="utf-8-sig")
-            assert "PV-SPEC-2026-10-v9" in text, rel
-            assert "9.0" in text, rel
-        assert C.SPEC_ID == "PV-SPEC-2026-10-v9" and C.SPEC_VERSION == "9.0"
+            assert "PV-SPEC-2026-10-v10" in text, rel
+            assert "10.0" in text, rel
+        assert C.SPEC_ID == "PV-SPEC-2026-10-v10" and C.SPEC_VERSION == "10.0"
         assert json.loads((PROJECT_ROOT / "data" / "photos.json").read_text(encoding="utf-8"))["specId"] == C.SPEC_ID
 
     def test_test_temp_folder_is_outside_the_project(self, tmp_path_factory):
@@ -932,7 +961,7 @@ class TestGuideSync:
     def test_readme_uses_the_guide_commands(self):
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
         for cmd in (
-            "PV-SPEC-2026-10-v9 / version 9.0",
+            "PV-SPEC-2026-10-v10 / version 10.0",
             "Python 3.11",
             "python -m venv .venv",
             r".\.venv\Scripts\Activate.ps1",
@@ -1058,7 +1087,7 @@ class TestFilenameDate:
         assert any("同期仕様ID" in e for e in V.validate(project).errors)
         build_ok(project)
         doc = load_photos(project)
-        assert doc["specId"] == "PV-SPEC-2026-10-v9" and doc["photos"][0]["dateSource"] == "filename"
+        assert doc["specId"] == "PV-SPEC-2026-10-v10" and doc["photos"][0]["dateSource"] == "filename"
         assert run_validate(project).returncode == 0
 
 
@@ -1261,3 +1290,98 @@ class TestStoriesRetired:
         doc = load_photos(project)
         assert doc["specId"] == C.SPEC_ID and "story" not in doc["photos"][0]
         assert run_validate(project).returncode == 0
+
+
+# ===========================================================================
+# 仕様 v10: 動く一覧の中間画像（mids/、元の縦横比・長辺最大800px）
+# ===========================================================================
+class TestMidImages:
+    def test_mid_keeps_aspect_ratio_and_long_side_800(self, project):
+        s = src(project)
+        cases = {
+            "landscape.jpg": ((3000, 2000), (800, 533)),
+            "portrait.jpg": ((1500, 2250), (533, 800)),
+            "panorama.jpg": ((6000, 1200), (800, 160)),
+            "small.jpg": ((600, 400), (600, 400)),  # 小さい写真は拡大しない
+        }
+        for i, (name, (size, _)) in enumerate(cases.items()):
+            make_image(s / name, size, exif_dt=f"2025:06:0{i + 1} 12:00:00", gps=True)
+        build_ok(project)
+        m = by_source(project)
+        for name, (_size, expected) in cases.items():
+            e = m[name]
+            assert e["mid"] == f"mids/{e['year']}/{e['id']}.webp"
+            with Image.open(project / e["mid"]) as im:
+                assert im.size == expected and im.format == "WEBP", name
+            assert V.webp_metadata_problems(project / e["mid"]) == []  # GPS などを残さない（S-08）
+        assert run_validate(project).returncode == 0
+
+    def test_mid_follows_exif_orientation(self, project):
+        img = Image.new("RGB", (1200, 800), RED)
+        img.paste(BLUE, (600, 0, 1200, 800))
+        from pvtest_helpers import exif_bytes
+
+        img.save(src(project) / "rotated.jpg", "JPEG", exif=exif_bytes("2024:05:01 10:00:00", orientation=6), quality=95)
+        build_ok(project)
+        e = by_source(project)["rotated.jpg"]
+        with Image.open(project / e["mid"]) as im:
+            assert im.size == (533, 800)
+            rgb = im.convert("RGB")
+            assert near(rgb.getpixel((266, 60)), RED) and near(rgb.getpixel((266, 740)), BLUE)
+
+    def test_mid_is_reused_and_rebuilt_when_missing(self, project):
+        s = src(project)
+        make_image(s / "a.jpg", (1600, 1200), exif_dt="2025:01:01 10:00:00")
+        make_image(s / "b.jpg", (1200, 1600), exif_dt="2025:02:01 10:00:00")
+        build_ok(project)
+        assert "新規変換 0 / 再利用 2" in build_ok(project).stdout
+        lost = by_source(project)["a.jpg"]["mid"]
+        (project / lost).unlink()
+        r = build_ok(project)
+        assert "新規変換 1 / 再利用 1" in r.stdout and (project / lost).is_file()
+        assert run_validate(project).returncode == 0
+
+    def test_upgrade_from_v9_creates_mids_for_every_photo(self, project):
+        """v9 までの公開データ（mids/ も mid もない）から生成し直すと、全写真の中間画像ができる。"""
+        s = src(project)
+        for i in range(3):
+            make_image(s / f"p{i}.jpg", (1400, 1000), exif_dt=f"2025:0{i + 1}:01 10:00:00")
+        build_ok(project)
+        doc = load_photos(project)
+        for ph in doc["photos"]:
+            ph.pop("mid")
+        doc["specId"], doc["specVersion"] = "PV-SPEC-2026-10-v9", "9.0"
+        write_json(project, doc)
+        shutil.rmtree(project / "mids")
+        man_path = project / ".build" / "manifest.json"
+        man = json.loads(man_path.read_text(encoding="utf-8"))
+        man["settingsKey"] = "v9-settings"
+        for ent in man["entries"].values():
+            ent.pop("mid")
+        man_path.write_text(json.dumps(man), encoding="utf-8")
+        r = build_ok(project)
+        assert "新規変換 3 / 再利用 0" in r.stdout
+        doc = load_photos(project)
+        assert doc["specId"] == C.SPEC_ID and all((project / ph["mid"]).is_file() for ph in doc["photos"])
+        assert (project / "mids" / ".gitkeep").is_file()
+        assert run_validate(project).returncode == 0
+
+    def test_validator_accepts_data_without_mid(self, project):
+        """中間画像は任意（旧データの移行など）。画面は詳細画像で代わりに表示する。"""
+        make_image(src(project) / "a.jpg", (1000, 800), exif_dt="2025:03:01 10:00:00")
+        build_ok(project)
+        doc = load_photos(project)
+        doc["photos"][0].pop("mid")
+        write_json(project, doc)
+        shutil.rmtree(project / "mids")
+        assert validate_errors(project) == []
+
+    def test_source_folder_inside_mids_is_rejected(self, project):
+        (project / "mids" / "sub").mkdir(parents=True, exist_ok=True)
+        (project / "config.json").write_text(json.dumps({"sourceDir": "mids/sub"}), encoding="utf-8")
+        r = run_build(project)
+        assert r.returncode == 1 and "出力先（mids/）" in r.stdout
+
+    def test_publish_script_includes_mids(self):
+        text = (PROJECT_ROOT / "tools" / "publish.ps1").read_text(encoding="utf-8-sig")
+        assert "'mids'" in text and "$f -like 'mids/*'" in text

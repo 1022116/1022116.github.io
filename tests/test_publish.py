@@ -1,4 +1,4 @@
-"""publish.ps1 の試験（同期仕様ID PV-SPEC-2026-10-v9 / 版 9.0）
+"""publish.ps1 の試験（同期仕様ID PV-SPEC-2026-10-v10 / 版 10.0）
 
 一時ディレクトリに Git リポジトリとベアリポジトリ（origin の代わり）を作り、
 ロック → 仮想環境確認 → build → validate → pytest → Git 安全確認 → commit/push の流れと停止条件を確認する。
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -68,11 +69,12 @@ def test_publish_commits_and_pushes_only_public_files(repo):
     assert "写真ビューアを更新: 3枚" in msg
     changed = git(repo, "diff", "--name-only", before, after).stdout.split()
     assert "data/photos.json" in changed
-    assert all(f.startswith(("data/", "photos/", "thumbs/")) for f in changed), changed
+    assert all(f.startswith(("data/", "photos/", "thumbs/", "mids/")) for f in changed), changed
     tracked = git(repo, "ls-files").stdout.split()
     assert not [f for f in tracked if f.startswith("source_photos/") and f != "source_photos/.gitkeep"]
     assert not [f for f in tracked if f.startswith((".build/", "logs/", ".locks/")) or f == "config.json"]
     assert sum(1 for f in tracked if f.startswith("photos/") and f.endswith(".webp")) == 3
+    assert sum(1 for f in tracked if f.startswith("mids/") and f.endswith(".webp")) == 3  # 動く一覧の中間画像（v10）
     assert staged(repo) == []
 
 
@@ -86,6 +88,20 @@ def test_leftover_stories_file_is_not_published(repo):
     published = json.loads(git(repo, "show", "HEAD:data/photos.json").stdout)
     assert published["photos"] and all("story" not in p for p in published["photos"])
     assert staged(repo) == []
+
+
+def test_first_publish_after_upgrade_adds_mids(project, tmp_path):
+    """仕様 v10: v9 までのリポジトリ（mids/ がない）でも、最初の公開で中間画像を一緒に commit する。"""
+    shutil.rmtree(project / "mids")
+    init_git_project(project, tmp_path / "remote.git")
+    for i in range(2):
+        make_image(project / "source_photos" / f"IMG_{i}.jpg", (1200, 900), exif_dt=f"2025:0{i + 1}:15 12:00:00")
+    r = run_publish(project)
+    assert r.returncode == 0, out(r)
+    tracked = git(project, "ls-tree", "-r", "--name-only", remote_head(project)).stdout.split()
+    assert "mids/.gitkeep" in tracked
+    assert sum(1 for f in tracked if f.startswith("mids/") and f.endswith(".webp")) == 2
+    assert staged(project) == []
 
 
 def test_publish_without_changes_does_not_commit(repo):
