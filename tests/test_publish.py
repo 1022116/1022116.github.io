@@ -1,4 +1,4 @@
-"""publish.ps1 の試験（同期仕様ID PV-SPEC-2026-10-v12 / 版 12.0）
+"""publish.ps1 の試験（同期仕様ID PV-SPEC-2026-10-v13 / 版 13.0）
 
 一時ディレクトリに Git リポジトリとベアリポジトリ（origin の代わり）を作り、
 ロック → 仮想環境確認 → build → validate → pytest → Git 安全確認 → commit/push の流れと停止条件を確認する。

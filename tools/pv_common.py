@@ -1,4 +1,4 @@
-"""写真ビューア 共通定義（同期仕様ID PV-SPEC-2026-10-v12 / 版 12.0）
+"""写真ビューア 共通定義（同期仕様ID PV-SPEC-2026-10-v13 / 版 13.0）
 
 build_gallery.py と validate_build.py が共有する定数・日時処理・排他ロック。
 """
@@ -10,8 +10,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-SPEC_ID = "PV-SPEC-2026-10-v12"
-SPEC_VERSION = "12.0"
+SPEC_ID = "PV-SPEC-2026-10-v13"
+SPEC_VERSION = "13.0"
 SCHEMA_VERSION = 3
 
 # S-03 / S-04（仕様で固定。設定ファイルからは変更できない）
