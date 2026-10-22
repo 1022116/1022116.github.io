@@ -7,7 +7,7 @@
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#ffffff">
-  <meta name="pv-spec" content="PV-SPEC-2026-10-v9 9.0">
+  <meta name="pv-spec" content="PV-SPEC-2026-10-v10 10.0">
   <title>写真</title>
   <link rel="preload" href="fonts/klee-one-subset.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
@@ -41,8 +41,15 @@
       <button type="button" class="status-retry" id="status-retry" hidden>再読み込み</button>
     </div>
     <section class="grid-panel" id="grid-panel" role="tabpanel" aria-label="写真一覧" tabindex="-1">
+      <!-- 動かない一覧（視差効果を減らす設定のとき）: 正方形を縦に並べる -->
       <ul class="grid" id="grid" aria-busy="true"></ul>
       <div class="grid-sentinel" id="grid-sentinel" aria-hidden="true"></div>
+      <!-- 動く一覧（v10）: 写真を終わりのない平面に散らす。位置は app.js が transform で決める。
+           写真が少ないときに画面を埋める複製は drift-copies に入れ、読み上げない -->
+      <div class="drift" id="drift">
+        <ul class="drift-list" id="drift-list"></ul>
+        <div class="drift-copies" id="drift-copies" aria-hidden="true"></div>
+      </div>
     </section>
   </main>
 
