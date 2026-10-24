@@ -1,4 +1,4 @@
-"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v16 / 版 16.0）
+"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v17 / 版 17.0）
 
 試験画像を一時ディレクトリに生成し、build → JSON → 検証 → 再生成までの状態遷移とファイル更新を確認する。
 分類: 正常 / 境界 / 異常 / 競合 / 移行 / 回帰
@@ -186,7 +186,7 @@ class TestNormal:
         raw = (project / "data" / "photos.json").read_bytes()
         assert not raw.startswith(b"\xef\xbb\xbf") and b"\r\n" not in raw
         doc = json.loads(raw.decode("utf-8"))
-        assert doc["specId"] == "PV-SPEC-2026-10-v16" and doc["specVersion"] == "16.0"
+        assert doc["specId"] == "PV-SPEC-2026-10-v17" and doc["specVersion"] == "17.0"
         assert doc["count"] == 1 and doc["years"] == [2025] and doc["timezone"] == "Asia/Tokyo"
         e = doc["photos"][0]
         assert set(e) == set(C.REQUIRED_KEYS) | {"mid"}  # mid: 動く一覧の中間画像（仕様 v10）
@@ -844,9 +844,9 @@ class TestRegression:
                  "tests/test_build.py"]
         for rel in files:
             text = (PROJECT_ROOT / rel).read_text(encoding="utf-8-sig")
-            assert "PV-SPEC-2026-10-v16" in text, rel
-            assert "16.0" in text, rel
-        assert C.SPEC_ID == "PV-SPEC-2026-10-v16" and C.SPEC_VERSION == "16.0"
+            assert "PV-SPEC-2026-10-v17" in text, rel
+            assert "17.0" in text, rel
+        assert C.SPEC_ID == "PV-SPEC-2026-10-v17" and C.SPEC_VERSION == "17.0"
         assert json.loads((PROJECT_ROOT / "data" / "photos.json").read_text(encoding="utf-8"))["specId"] == C.SPEC_ID
 
     def test_test_temp_folder_is_outside_the_project(self, tmp_path_factory):
@@ -961,7 +961,7 @@ class TestGuideSync:
     def test_readme_uses_the_guide_commands(self):
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
         for cmd in (
-            "PV-SPEC-2026-10-v16 / version 16.0",
+            "PV-SPEC-2026-10-v17 / version 17.0",
             "Python 3.11",
             "python -m venv .venv",
             r".\.venv\Scripts\Activate.ps1",
@@ -1087,7 +1087,7 @@ class TestFilenameDate:
         assert any("同期仕様ID" in e for e in V.validate(project).errors)
         build_ok(project)
         doc = load_photos(project)
-        assert doc["specId"] == "PV-SPEC-2026-10-v16" and doc["photos"][0]["dateSource"] == "filename"
+        assert doc["specId"] == "PV-SPEC-2026-10-v17" and doc["photos"][0]["dateSource"] == "filename"
         assert run_validate(project).returncode == 0
 
 
