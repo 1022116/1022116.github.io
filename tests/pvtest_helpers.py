@@ -34,8 +34,8 @@ def make_project(dest: Path) -> Path:
     (dest / "mids" / ".gitkeep").touch()
     # 実プロジェクトの公開データに依存しないよう、常に空のギャラリーから始める
     empty = {
-        "specId": "PV-SPEC-2026-10-v13",
-        "specVersion": "13.0",
+        "specId": "PV-SPEC-2026-10-v14",
+        "specVersion": "14.0",
         "schemaVersion": 3,
         "title": "写真",
         "timezone": "Asia/Tokyo",

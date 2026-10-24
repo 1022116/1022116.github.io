@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""画面用フォント（DotGothic16）の小さな版を作る開発用スクリプト（同期仕様ID PV-SPEC-2026-10-v13 / 版 13.0）
+"""画面用フォント（DotGothic16）の小さな版を作る開発用スクリプト（同期仕様ID PV-SPEC-2026-10-v14 / 版 14.0）
 
 画面に出る文言（js/app.js の文字列と index.html の本文）・英数字・かな・全角記号だけを取り出して
 fonts/dotgothic16-subset.woff2 を作り、css/style.css に書く unicode-range を表示する。

@@ -1,5 +1,5 @@
 @echo off
-rem Double-click launcher for publish.ps1 (sync spec PV-SPEC-2026-10-v13 / 13.0).
+rem Double-click launcher for publish.ps1 (sync spec PV-SPEC-2026-10-v14 / 14.0).
 rem Put a shortcut to this file on the desktop and name it as you like.
 rem Keep this file ASCII only: publish.ps1 switches the console to UTF-8,
 rem and cmd.exe reads the rest of this file with that code page.
