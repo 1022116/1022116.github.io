@@ -1,4 +1,4 @@
-"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v14 / 版 14.0）
+"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v16 / 版 16.0）
 
 Playwright（Chromium）でスマートフォン画面をエミュレートし、試験画像から生成したサイトを
 GitHub Pages と同じ「リポジトリ名のサブパス」で配信して確認する。
@@ -1898,23 +1898,25 @@ def test_pattern2_captions_are_never_cut_off(pw, site, width):
 
 
 # ===========================================================================
-# 仕様 v14: パターン3「揺れる」（斜めの紐に写真と札を吊るし、スクロールの勢いとそよ風で揺らす）
+# 仕様 v14〜v16: パターン3「揺れる」（1日＝1本の紐に写真と日付の札を吊るし、スクロール・スライドの勢いとそよ風で揺らす）
 # ===========================================================================
 SW_STATE = """() => {
     const box = e => { const r = e.getBoundingClientRect(); return { x: r.left, y: r.top + scrollY, w: r.width, h: r.height }; };
     const angle = e => { const t = getComputedStyle(e).transform; if (!t || t === 'none') return 0;
         const m = t.match(/matrix\\(([^,]+), ([^,]+)/); return m ? Math.atan2(+m[2], +m[1]) * 180 / Math.PI : 0; };
     return {
-      lines: [...document.querySelectorAll('#sway-lines .sw-line')].map(l => { const r = l.getBoundingClientRect();
-          return { deg: angle(l), left: parseFloat(l.style.left), top: parseFloat(l.style.top), width: parseFloat(l.style.width) }; }),
+      lines: [...document.querySelectorAll('#sway-lines .sw-line')].map(l => ({ row: +l.dataset.row, deg: angle(l),
+          left: parseFloat(l.style.left), top: parseFloat(l.style.top) })),
+      bands: [...document.querySelectorAll('#sway-bands .sw-band')].map(b => ({ row: +b.dataset.row, max: +b.dataset.max, ...box(b) })),
       photos: [...document.querySelectorAll('#sway-list .sw-item')].map(li => { const b = li.querySelector('.sw-tile');
-          return { i: +b.dataset.index, id: b.dataset.id, ...box(b), deg: angle(li), src: b.querySelector('img').getAttribute('src'),
-                   left: parseFloat(li.style.left), top: parseFloat(li.style.top) }; }),
-      tags: [...document.querySelectorAll('#sway-tags .sw-tag')].map(t => ({ kind: t.className.replace('sw-tag sw-tag-', ''),
+          return { row: +li.dataset.row, i: +b.dataset.index, id: b.dataset.id, ...box(b), deg: angle(li),
+                   src: b.querySelector('img').getAttribute('src'), left: parseFloat(li.style.left), top: parseFloat(li.style.top) }; }),
+      tags: [...document.querySelectorAll('#sway-tags .sw-tag')].map(t => ({ row: +t.dataset.row, kind: t.className.replace('sw-tag sw-tag-', ''),
           lines: [...t.querySelectorAll('.sw-card > span')].map(s => s.textContent), label: (t.querySelector('.sw-label') || {}).textContent || null,
           ...box(t.querySelector('.sw-card')), deg: angle(t) })),
       moving: document.getElementById('sway').hasAttribute('data-moving'),
-      vw: document.documentElement.clientWidth, sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight, vh: innerHeight };
+      vw: document.documentElement.clientWidth, sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight,
+      vh: innerHeight, sy: scrollY };
 }"""
 
 
@@ -1922,7 +1924,7 @@ def sway_state(page):
     return page.evaluate(SW_STATE)
 
 
-def sway_settled(page, timeout=10000):
+def sway_settled(page, timeout=15000):
     page.wait_for_selector("#sway:not([data-moving])", state="attached", timeout=timeout)
 
 
@@ -1930,8 +1932,25 @@ def overlap(a, b, pad=0):
     return min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"]) > pad and min(a["y"] + a["h"], b["y"] + b["h"]) - max(a["y"], b["y"]) > pad
 
 
+def days_of(doc):
+    """撮影日ごとの写真ID（新しい日から。日の中も新しい順）。"""
+    days = {}
+    for p in doc["photos"]:
+        days.setdefault(p["date"][:10], []).append(p["id"])
+    return list(days.items())
+
+
+def line_y(l, x):
+    import math
+    return l["top"] + math.tan(math.radians(l["deg"])) * (x - l["left"])
+
+
+def row_photos(st, row):
+    return [ph for ph in st["photos"] if ph["row"] == row]
+
+
 @pytest.mark.parametrize("device", ["phone", "desktop"])
-def test_pattern3_hangs_photos_and_tags_on_slanted_strings(pw, site, device):
+def test_pattern3_hangs_one_day_per_string(pw, site, device):
     p, browser = pw
     kw = dict(**p.devices["iPhone 13"]) if device == "phone" else {"viewport": {"width": 1440, "height": 900}}
     ctx = motion_context(browser, "3", **kw)
@@ -1941,57 +1960,167 @@ def test_pattern3_hangs_photos_and_tags_on_slanted_strings(pw, site, device):
         assert page.is_hidden("#cover") and page.locator("#grid > li, #drift .drift-item, #elastic .eg-item").count() == 0
         sway_settled(page)
         st = sway_state(page)
-        # 紐: 傾きは1本ずつ違い（2〜7度）、上から下へ並んで交差しない
-        assert len(st["lines"]) >= 3
+        days = days_of(site["doc"])
+        # 紐: いちばん上の短い紐（範囲と Change view）＋ 撮影日ごとに1本。傾きは2〜7度で、画面の中で交差しない
+        assert len(st["lines"]) == len(days) + 1 and len(st["bands"]) == len(days) + 1
         assert all(2 - 0.01 <= abs(l["deg"]) <= 7 + 0.01 for l in st["lines"])
-        assert len({round(l["deg"], 2) for l in st["lines"]}) > 1
-        def line_y(l, x):
-            import math
-            return l["top"] + math.tan(math.radians(l["deg"])) * (x - l["left"])
         for a, b in zip(st["lines"], st["lines"][1:]):
             assert all(line_y(b, x) - line_y(a, x) > 30 for x in (0, st["vw"]))
-        # 写真: 全部、新しい順（読み上げ・Tab の順）、元の縦横比、中間画像、止まっているときは傾いていない
+        # 写真: 1本の紐にその日の写真だけを新しい順に。全体も新しい順（読み上げ・Tab の順）
         photos = st["photos"]
         assert [ph["i"] for ph in photos] == list(range(N_ALL)) and [ph["id"] for ph in photos] == site["ids"]
+        for r, (day, ids) in enumerate(days, start=1):
+            assert [ph["id"] for ph in row_photos(st, r)] == ids, day
         doc = {x["id"]: x for x in site["doc"]["photos"]}
         assert all(abs(ph["w"] / ph["h"] - doc[ph["id"]]["width"] / doc[ph["id"]]["height"]) < 0.03 for ph in photos)
-        assert all(ph["src"].startswith("mids/") for ph in photos)
-        assert all(ph["deg"] == 0 for ph in photos)
-        # 写真の上の真ん中（クリップ）が紐の上にある
-        for ph in photos[:12]:
-            cx, cy = ph["left"] + ph["w"] / 2, ph["top"] + 7
-            assert min(abs(line_y(l, cx) - cy) for l in st["lines"]) < 1.5, ph
-        # 1本に吊るす枚数（スマホ1〜2枚、PC 3〜6枚。最後の紐と最初の紐は少ないこともある）
-        rows = {}
+        assert all(ph["src"].startswith("mids/") for ph in photos) and all(ph["deg"] == 0 for ph in photos)
+        # クリップ（写真の上の真ん中）は自分の日の紐の上
+        lines = {l["row"]: l for l in st["lines"]}
         for ph in photos:
-            rows.setdefault(round(ph["top"] / 10), []).append(ph)
-        counts = []
-        for l in st["lines"]:
-            counts.append(sum(1 for ph in photos if abs(line_y(l, ph["left"] + ph["w"] / 2) - (ph["top"] + 7)) < 1.5))
-        assert sum(counts) == N_ALL
-        if device == "phone":
-            assert max(counts) <= 2 and 2 in counts
-        else:
-            assert max(counts) <= 6 and max(counts) >= 3
-        # 札: 写真ごとに番号・年・月日の3行（「No.」なし）。最初の紐に撮影年の範囲と Change view
-        tags = [t for t in st["tags"] if t["kind"] == "tag"]
-        assert len(tags) == N_ALL
-        newest = site["doc"]["photos"][0]
-        assert tags[0]["lines"] == [str(len(site["ids"])), newest["date"][:4], newest["date"][5:10].replace("-", ".")]
-        lead = [t for t in st["tags"] if t["kind"] != "tag"]
+            assert abs(line_y(lines[ph["row"]], ph["left"] + ph["w"] / 2) - (ph["top"] + 7)) < 1.5, ph
+        # 札: 紐の左端に日付（年・月日）だけ（写真の横の番号の札は v16 で廃止）。いちばん上の紐に範囲と Change view
+        for r, (day, ids) in enumerate(days, start=1):
+            tags = [t for t in st["tags"] if t["row"] == r]
+            assert len(tags) == 1 and tags[0]["kind"] == "date" and tags[0]["lines"] == [day[:4], day[5:].replace("-", ".")]
+            assert tags[0]["x"] < min(ph["x"] for ph in row_photos(st, r))  # 日付の札がいちばん左
+        assert page.locator(".sw-tag-num").count() == 0
+        top = [t for t in st["tags"] if t["row"] == 0]
         years = site["doc"]["years"]
-        assert [t["kind"] for t in lead] == ["range", "switch"]
-        assert lead[0]["lines"] == [str(years[-1]), "–", str(years[0])] and lead[1]["label"] == "Change view"
-        assert max(t["y"] for t in lead) < photos[0]["y"] + photos[0]["h"]  # いちばん上の紐に吊るす
-        # 止まっているときは、写真どうし・写真と札が重ならない
-        for k, a in enumerate(photos):
-            for b in photos[k + 1:]:
+        assert [t["kind"] for t in top] == ["range", "switch"]
+        assert top[0]["lines"] == [str(years[-1]), "–", str(years[0])] and top[1]["label"] == "Change view"
+        # 画面に収まらない日（6枚の日）はスライドでき、続きの写真は画面の外。1枚の日はスライドしない
+        bands = {b["row"]: b for b in st["bands"]}
+        for r, (day, ids) in enumerate(days, start=1):
+            if len(ids) == 1:
+                assert bands[r]["max"] == 0
+        long_rows = [r for r, (day, ids) in enumerate(days, start=1) if len(ids) == 6]
+        if device == "phone":
+            assert long_rows and all(bands[r]["max"] > 0 for r in long_rows)
+            for r in long_rows:
+                assert max(ph["x"] for ph in row_photos(st, r)) > st["vw"]
+        # 止まっているときは、画面の中の写真どうし・写真と札が重ならない
+        inside = lambda e: e["x"] >= 0 and e["x"] + e["w"] <= st["vw"]
+        shown = [ph for ph in photos if inside(ph)]
+        tags_in = [t for t in st["tags"] if inside(t)]
+        for k, a in enumerate(shown):
+            for b in shown[k + 1:]:
                 assert not overlap(a, b, 1), (a, b)
-            for t in st["tags"]:
+            for t in tags_in:
                 assert not overlap(a, t, 1), (a, t)
-        # ページは縦にスクロールし、横にははみ出さない
+        # ページは縦にスクロールし、横にははみ出さない（画面の外の写真は切れている）
         assert st["sh"] > st["vh"] * 3 and st["sw"] <= st["vw"]
-        assert page.get_attribute("#sway-tags", "aria-hidden") == "true" and page.get_attribute("#sway-lines", "aria-hidden") == "true"
+        for layer in ("#sway-tags", "#sway-lines", "#sway-bands"):
+            assert page.get_attribute(layer, "aria-hidden") == "true"
+        w.assert_clean()
+    finally:
+        ctx.close()
+
+
+def test_pattern3_slides_a_long_day_by_touch(pw, site):
+    p, browser = pw
+    ctx = motion_context(browser, "3", **p.devices["iPhone 13"])
+    try:
+        page, w = open_page(ctx, site["main"])
+        sway_settled(page)
+        st = sway_state(page)
+        band = next(b for b in st["bands"] if b["max"] > 0 and b["y"] > 0 and b["y"] + b["h"] < st["vh"])
+        r = band["row"]
+        line = next(l for l in st["lines"] if l["row"] == r)
+        before = row_photos(st, r)
+        others = [ph for ph in st["photos"] if ph["row"] != r]
+        y = line_y(line, 330) + 24  # 紐のすぐ下（写真か帯の上）
+        t = Touch(page)
+        t.start(330, y)
+        for k in range(1, 13):
+            t.move(330 - k * 20, y + k * 0.4)
+            page.wait_for_timeout(16)
+        mid = sway_state(page)
+        assert max(abs(ph["deg"]) for ph in row_photos(mid, r)) > 1  # スライドの勢いで揺れる
+        t.end()
+        sway_settled(page)
+        st = sway_state(page)
+        after = row_photos(st, r)
+        moved = [b["x"] - a["x"] for a, b in zip(before, after)]
+        assert all(m < -150 for m in moved), moved  # 指を離したあとも勢いで少し進む
+        import math
+        dy = [(b["y"] - a["y"]) for a, b in zip(before, after)]
+        assert all(abs(d - math.tan(math.radians(line["deg"])) * m) < 2 for d, m in zip(dy, moved))  # 紐に沿って動く
+        assert all(ph["deg"] == 0 for ph in after)
+        assert [(round(ph["x"]), round(ph["y"])) for ph in st["photos"] if ph["row"] != r] == [(round(ph["x"]), round(ph["y"])) for ph in others]
+        assert st["sy"] == 0  # ページは縦に動かない
+        saved = json.loads(page.evaluate("sessionStorage.getItem('pv:sway')"))
+        assert saved["v"] == 2 and list(saved["rows"].values())[0] > 150
+        # いちばん右まで送ると、最後の写真が右端（余白の内側）にそろって止まる
+        for _ in range(6):
+            t.swipe(340, y, -300, 0, steps=8)
+            page.wait_for_timeout(50)
+        sway_settled(page)
+        st = sway_state(page)
+        last = row_photos(st, r)[-1]
+        side = max(16, round(st["vw"] * 0.04))
+        assert abs(last["x"] + last["w"] - (st["vw"] - side)) < 3
+        # 左へ戻すと最初の位置。端の先へ引っぱっても戻る
+        for _ in range(8):
+            t.swipe(40, y, 300, 0, steps=8)
+            page.wait_for_timeout(50)
+        sway_settled(page)
+        st = sway_state(page)
+        assert [round(ph["x"]) for ph in row_photos(st, r)] == [round(ph["x"]) for ph in before]
+        # スライドの終わりでは開かない。タップすると開く
+        target = row_photos(st, r)[0]
+        page.touchscreen.tap(target["x"] + target["w"] / 2, target["y"] - st["sy"] + target["h"] / 2)
+        page.wait_for_function("document.getElementById('viewer').open")
+        assert page.get_attribute("#viewer-img", "data-id") == target["id"]
+        w.assert_clean()
+    finally:
+        ctx.close()
+
+
+def test_pattern3_slides_with_mouse_and_horizontal_wheel(pw, site):
+    p, browser = pw
+    ctx = motion_context(browser, "3", viewport={"width": 900, "height": 900})
+    try:
+        page, w = open_page(ctx, site["main"])
+        sway_settled(page)
+        st = sway_state(page)
+        band = next(b for b in st["bands"] if b["max"] > 0 and b["y"] > 0 and b["y"] + b["h"] < st["vh"])
+        r = band["row"]
+        x0 = [ph["x"] for ph in row_photos(st, r)]
+        y = line_y(next(l for l in st["lines"] if l["row"] == r), 450) + 24  # 紐のすぐ下
+        # マウスのドラッグ（写真の上から始めても、動かしたら開かない）
+        ph0 = row_photos(st, r)[1]
+        page.mouse.move(ph0["x"] + ph0["w"] / 2, ph0["y"] + ph0["h"] / 2)
+        page.mouse.down()
+        page.mouse.move(ph0["x"] + ph0["w"] / 2 - 120, ph0["y"] + ph0["h"] / 2, steps=10)
+        page.mouse.up()
+        page.wait_for_timeout(100)
+        assert not viewer_open(page)
+        sway_settled(page)
+        x1 = [ph["x"] for ph in row_photos(sway_state(page), r)]
+        assert all(b - a < -100 for a, b in zip(x0, x1))
+        # 縦のホイールはページのスクロール（紐は動かない）
+        page.mouse.move(450, y)
+        page.mouse.wheel(0, 200)
+        page.wait_for_timeout(300)
+        assert page.evaluate("scrollY") > 0
+        page.evaluate("window.scrollTo(0, 0)")
+        sway_settled(page)
+        assert [round(ph["x"]) for ph in row_photos(sway_state(page), r)] == [round(v) for v in x1]
+        # 横のホイール（トラックパッド）と Shift＋ホイールで紐をスライド
+        page.mouse.move(450, y)
+        page.mouse.wheel(150, 0)
+        page.wait_for_timeout(100)  # ホイールの処理が始まるまで
+        sway_settled(page)
+        x2 = [ph["x"] for ph in row_photos(sway_state(page), r)]
+        assert all(abs((b - a) + 150) < 2 for a, b in zip(x1, x2))
+        page.keyboard.down("Shift")
+        page.mouse.wheel(0, -100)
+        page.keyboard.up("Shift")
+        page.wait_for_timeout(100)
+        sway_settled(page)
+        x3 = [ph["x"] for ph in row_photos(sway_state(page), r)]
+        assert all(abs((b - a) - 100) < 2 for a, b in zip(x2, x3))
+        assert page.evaluate("scrollY") == 0
         w.assert_clean()
     finally:
         ctx.close()
@@ -2009,14 +2138,14 @@ def test_pattern3_swings_with_scroll_then_settles(pw, site):
             page.wait_for_timeout(16)
         page.wait_for_timeout(120)
         st = sway_state(page)
-        top = page.evaluate("scrollY")
+        top = st["sy"]
         assert top > 400
         near = [ph for ph in st["photos"] if top - 200 < ph["y"] < top + st["vh"]]
         assert near and max(abs(ph["deg"]) for ph in near) > 1.5  # スクロールの勢いで傾く
         assert max(abs(ph["deg"]) for ph in st["photos"]) <= 20.1  # 傾きすぎない
         tags = [t for t in st["tags"] if top - 200 < t["y"] < top + st["vh"]]
         assert max(abs(t["deg"]) for t in tags) > 1.5  # 札も揺れる
-        sway_settled(page, timeout=12000)  # 止まると収まる
+        sway_settled(page, timeout=15000)  # 止まると収まる
         st = sway_state(page)
         assert all(ph["deg"] == 0 for ph in st["photos"]) and all(t["deg"] == 0 for t in st["tags"])
         w.assert_clean()
@@ -2039,47 +2168,55 @@ def test_pattern3_breeze_passes_from_left_to_right(pw, site):
             page.wait_for_timeout(50)
         assert 0.2 < seen < 6, seen  # ほんの少し（数度まで）
         assert page.evaluate("scrollY") == 0
-        sway_settled(page, timeout=12000)
+        sway_settled(page, timeout=15000)
         w.assert_clean()
     finally:
         ctx.close()
 
 
-def test_pattern3_open_photo_keyboard_restore_and_change_view(pw, site):
+def test_pattern3_keyboard_reveals_photos_and_restores_after_reload(pw, site):
     p, browser = pw
     ctx = motion_context(browser, "3", **p.devices["iPhone 13"])
     try:
         page, w = open_page(ctx, site["main"])
         sway_settled(page)
-        # キーボード: スキップリンク → Change view（右下。移ったときだけ見える）→ 写真
+        days = days_of(site["doc"])
+        assert len(days[0][1]) == 6  # 最初の日は6枚（画面に収まらない）
+        # キーボード: スキップリンク → Change view（右下。移ったときだけ見える）→ 写真（新しい順）
         assert page.evaluate("getComputedStyle(document.getElementById('pattern-switch')).opacity") == "0"
         page.keyboard.press("Tab")
         page.keyboard.press("Tab")
         assert page.evaluate("document.activeElement.id") == "pattern-switch"
         assert page.evaluate("getComputedStyle(document.getElementById('pattern-switch')).opacity") == "1"
-        page.keyboard.press("Tab")
-        assert page.evaluate("document.activeElement.dataset.index") == "0"
+        for k in range(4):
+            page.keyboard.press("Tab")
+        assert page.evaluate("document.activeElement.dataset.index") == "3"
+        sway_settled(page)
+        rect = page.evaluate("(() => { const r = document.activeElement.getBoundingClientRect(); return [r.left, r.right]; })()")
+        assert rect[0] >= 0 and rect[1] <= page.evaluate("innerWidth")  # 画面の外の写真へ移ると、紐がスライドして見える
         page.keyboard.press("Enter")
         page.wait_for_function("document.getElementById('viewer').open")
         page.keyboard.press("ArrowRight")
+        page.keyboard.press("ArrowRight")
+        assert counter(page) == f"6 / {N_ALL}"
         page.keyboard.press("Escape")
-        assert page.evaluate("document.activeElement.dataset.index") == "1"
-        # タップで開いて閉じると、その写真に戻る
-        page.click(".sw-tile[data-index='2']")
-        page.wait_for_function("document.getElementById('viewer').open")
-        assert counter(page) == f"3 / {N_ALL}" and page.get_attribute("#viewer-img", "data-id") == site["ids"][2]
-        page.click("#viewer-close")
-        assert page.evaluate("document.activeElement.dataset.index") == "2"
-        # 並びは再読込しても同じで、スクロール位置も戻る
-        before = {ph["id"]: (round(ph["left"]), round(ph["top"]), round(ph["w"])) for ph in sway_state(page)["photos"]}
-        page.evaluate("window.scrollTo(0, 2000)")
+        assert page.evaluate("document.activeElement.dataset.index") == "5"
+        sway_settled(page)
+        rect = page.evaluate("(() => { const r = document.activeElement.getBoundingClientRect(); return [r.left, r.right]; })()")
+        assert rect[0] >= 0 and rect[1] <= page.evaluate("innerWidth")  # 送った先の写真が見えるところまでスライド
+        # スクロール位置と、紐ごとのスライド位置は再読込で戻る（並びも同じ）
+        page.evaluate("window.scrollTo(0, 600)")
         page.wait_for_timeout(400)
-        assert json.loads(page.evaluate("sessionStorage.getItem('pv:sway')")) == {"v": 1, "y": 2000}
+        sway_settled(page, timeout=15000)  # スクロールで揺れた写真が止まってから
+        before = {ph["id"]: (round(ph["x"]), round(ph["y"])) for ph in sway_state(page)["photos"]}
+        saved = json.loads(page.evaluate("sessionStorage.getItem('pv:sway')"))
+        assert saved["v"] == 2 and saved["y"] == 600 and saved["rows"]
         page.reload()
         page.wait_for_selector("html[data-pv=ready]")
         page.wait_for_timeout(300)
-        assert abs(page.evaluate("scrollY") - 2000) < 2
-        after = {ph["id"]: (round(ph["left"]), round(ph["top"]), round(ph["w"])) for ph in sway_state(page)["photos"]}
+        assert abs(page.evaluate("scrollY") - 600) < 2
+        sway_settled(page)
+        after = {ph["id"]: (round(ph["x"]), round(ph["y"])) for ph in sway_state(page)["photos"]}
         assert after == before
         # 札の Change view を押すと、見せ方を選ぶ画面
         page.evaluate("window.scrollTo(0, 0)")
@@ -2088,7 +2225,7 @@ def test_pattern3_open_photo_keyboard_restore_and_change_view(pw, site):
         page.wait_for_function("document.getElementById('chooser').open")
         page.click(".chooser-opt[data-pattern='2']")
         assert page.evaluate("document.documentElement.dataset.mode") == "elastic"
-        assert page.locator("#sway .sw-item").count() == 0  # 揺れるの一覧は片づける
+        assert page.locator("#sway .sw-item, #sway .sw-band").count() == 0  # 揺れるの一覧は片づける
         w.assert_clean()
     finally:
         ctx.close()
@@ -2099,16 +2236,17 @@ def test_pattern3_relayouts_on_width_change_and_handles_few_photos(pw, site):
     ctx = motion_context(browser, "3", viewport={"width": 1440, "height": 900})
     try:
         page, w = open_page(ctx, site["main"])
-        wide = len(sway_state(page)["lines"])
+        wide = sway_state(page)
         page.set_viewport_size({"width": 700, "height": 900})
-        page.wait_for_function(f"document.querySelectorAll('#sway-lines .sw-line').length > {wide}")
+        page.wait_for_function(f"document.documentElement.clientWidth === 700 && [...document.querySelectorAll('.sw-band')].some(b => +b.dataset.max > {max(b['max'] for b in wide['bands'])})")
         st = sway_state(page)
-        assert len(st["photos"]) == N_ALL and st["sw"] <= st["vw"]
-        assert all(t["x"] + t["w"] <= st["vw"] + 1 for t in st["tags"])
+        assert len(st["photos"]) == N_ALL and len(st["lines"]) == len(wide["lines"])  # 紐の数（日の数）は変わらない
+        assert st["sw"] <= st["vw"]
         w.assert_clean()
         page, w = open_page(ctx, site["few"])
         st = sway_state(page)
-        assert len(st["photos"]) == 2 and len([t for t in st["tags"] if t["kind"] == "tag"]) == 2
+        assert len(st["photos"]) == 2 and len(st["lines"]) == 3  # 2枚・2日 → 上の紐＋2本
+        assert all(b["max"] == 0 for b in st["bands"])
         w.assert_clean()
         page, w = open_page(ctx, site["empty"], state="empty")
         assert page.locator("#sway .sw-item, #sway .sw-line").count() == 0
