@@ -1,4 +1,4 @@
-/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v16 / 版 16.0）
+/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v17 / 版 17.0）
    S-05: 一覧（v10・v12・v13 で変更）。v13 から年で分けず、全部の写真を新しい順に1つの一覧にする（年のタブ・上部のバーは廃止）
          ・パターン1 散らばる（html[data-mode="drift"]）… 元の縦横比の写真を大小ばらばらに、終わりのない平面へ散らす。
            スクロール・ドラッグで写真ごとに違う速さで動く（動きは app.js、見た目はこのファイルの「動く一覧」）。
@@ -7,6 +7,8 @@
          ・パターン3 揺れる（html[data-mode="sway"]。v14・v15）… 撮影日ごとに1本の斜めの紐を張って写真と札（日付・番号）を吊るし、
            スクロール・スライドの勢いとそよ風で振り子のように揺らす。画面に収まらない日の紐は左右にスライドできる
            （v16: 写真の横の番号の札は廃止）
+         ・v17: 3つのパターンとも、部品（写真・番号と日付・紐・札）は画面の近くの分だけ app.js が作り、離れたら片付ける
+           （写真が増えても軽いまま）。パターン2の列と段の位置も app.js が置く
          ・動かない一覧（html[data-mode="still"]。視差効果を減らす設定のとき）… v9 までのポートフォリオ型一覧
            （正方形をスマホ2列・幅640px以上で3列、番号と撮影日を添える。
            表紙の写真（config.json の coverPhoto、未指定は最新）を先頭に中央へ大きく）
@@ -758,21 +760,22 @@ html[data-mode="elastic"] .site-meta {
   padding: max(28px, env(safe-area-inset-top)) 5vw 0;
 }
 
+/* v17: 写真は1つのリスト（新しい順）。列と段の位置・一覧の高さ・列の遅れは app.js が決める
+   （上の余白 64px・下 140px、列と段のあいだと左右は 5vw）。部品は画面の近くの写真だけ */
 .eg-grid {
-  display: grid;
-  grid-template-columns: repeat(var(--eg-cols, 3), minmax(0, 1fr));
-  column-gap: 5vw;
-  align-items: start;
-  padding: 64px 5vw 140px;
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.eg-col {
-  display: flex;
-  flex-direction: column;
-  gap: 5vw;
+.eg-item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0;
   min-width: 0;
   will-change: transform;
 }
-.eg-item { margin: 0; min-width: 0; }
 .eg-tile {
   position: relative;
   display: block;

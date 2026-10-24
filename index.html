@@ -7,7 +7,7 @@
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#ffffff">
-  <meta name="pv-spec" content="PV-SPEC-2026-10-v16 16.0">
+  <meta name="pv-spec" content="PV-SPEC-2026-10-v17 17.0">
   <title>写真</title>
   <link rel="preload" href="fonts/dotgothic16-subset.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
@@ -43,13 +43,15 @@
       <ul class="grid" id="grid" aria-busy="true"></ul>
       <div class="grid-sentinel" id="grid-sentinel" aria-hidden="true"></div>
       <!-- 動く一覧（v10）: 写真を終わりのない平面に散らす。位置は app.js が transform で決める（散らし方は読み込むたびに変わる）。
-           写真が少ないときに画面を埋める複製は drift-copies に、散らした「Change view」（v13）は drift-labels に入れ、読み上げない -->
+           写真が少ないときに画面を埋める複製は drift-copies に、散らした「Change view」（v13）は drift-labels に入れ、読み上げない。
+           v17: 3つのパターンとも、部品は画面の近くの写真の分だけ app.js が作り、離れたら片付ける（写真が増えても軽いまま） -->
       <div class="drift" id="drift">
         <ul class="drift-list" id="drift-list"></ul>
         <div class="drift-copies" id="drift-copies" aria-hidden="true"></div>
         <div class="drift-labels" id="drift-labels" aria-hidden="true"></div>
       </div>
-      <!-- パターン2「並べる」（v12）: 写真を列に並べ、スクロールすると列ごとに遅れてついてくる。列は app.js が作る -->
+      <!-- パターン2「並べる」（v12）: 写真を列に並べ、スクロールすると列ごとに遅れてついてくる。
+           v17 から写真は1つのリスト（新しい順）に入れ、列と段の位置は app.js が置く -->
       <div class="elastic" id="elastic"></div>
       <!-- パターン3「揺れる」（v14〜v16）: 撮影日ごとに1本の斜めの紐を張り、写真と日付の札を吊るして（番号の札は v16 で廃止）、
            スクロール・スライドの勢いとそよ風で揺らす。画面に収まらない日の紐は左右にスライドできる（sway-bands が受け持つ）。

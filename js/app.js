@@ -1,5 +1,5 @@
 /*
- * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v16 / 版 16.0）
+ * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v17 / 版 17.0）
  * HTML / CSS / Vanilla JavaScript のみ。外部CDN・ライブラリなし。URLはすべて相対（GitHub Pages のサブパスで動作）。
  *
  * ■ 一覧（v13）
@@ -7,6 +7,17 @@
  *       「No.」は付けない）と撮影日を添える。v12 までの年のタブ・散らした年の文字・「〜年の〜枚」は廃止。
  *       （photos.json の year は生成側の S-01 として残るが、画面では使わない）
  *   - 撮影年の範囲（例: 2025–2026）だけを小さく表示する。表示できないデータがあるときはその件数も出す。
+ *
+ * ■ 画面の近くだけ部品を作る（v17。写真が増えても軽いまま）
+ *   - 動く見せ方（パターン1〜3）では、全部の写真の位置と大きさを数字として計算し、部品（ボタン・画像・番号と日付、
+ *       紐・札）は画面の近くの写真だけ作る。パターン2・3は画面の上下1画面分以内を作り、2画面分より離れたら片付ける。
+ *       パターン1は画面の周り（画面の半分か写真1枚分の広いほう）を作り、その2倍より離れたら片付ける。
+ *   - 片付けても、紐ごとのスライド位置・現像したかどうかは覚えておき、作り直したときは同じ状態にする
+ *       （一度現像した写真は現像し直さない）。画像はブラウザーに残っているので読み込み直しにはならない。
+ *   - いちばん新しい写真といちばん古い写真（Tab で一覧に入ったときの行き先）と、フォーカスのある写真とその前後
+ *       （Tab で次へ進めるように）は、離れていても片付けない。各写真に「全部で何枚のうち何枚目か」を付ける（読み上げ用）。
+ *   - 全画面表示を閉じたときは、その写真の所へ移って（部品がなければ作って）からフォーカスを戻す。
+ *   - 動かない一覧は v9 までどおり（60枚ずつ足していく。片付けはしない）。
  *
  * ■ 状態保存と再読込の仕様
  *   - スクロール位置（動かない一覧）… sessionStorage「pv:scroll」に保存。
@@ -48,7 +59,8 @@
  *       選んだパターンは sessionStorage「pv:pattern」に保存し、同じタブの再読込・戻る操作では選ぶ画面を出さない。
  *       前回選んだものは localStorage「pv:patternLast」に覚えておき、選ぶ画面で最初に選ばれた状態にする。
  *       画面の「Change view」からいつでも選び直せる。視差効果を減らす設定のときは選ぶ画面を出さず、動かない一覧にする。
- *   - パターン2 … 写真を 4:5 の枠で列に並べる（幅 910px 未満は3列、以上は7列）。ページは普通にスクロールし、
+ *   - パターン2 … 写真を 4:5 の枠で列に並べる（幅 910px 未満は3列、以上は7列。v17 から写真は1つのリストに新しい順で入れ、
+ *       列と段の位置は app.js が置く。読み上げ・Tab も新しい順）。ページは普通にスクロールし、
  *       各列はスクロールに遅れてついてくる（中央の列 0.5 秒、外側へ1列ごとに 0.1 秒ずつ遅い）。止まるとそろう。
  *       撮影年の範囲・「Change view」は一覧の上に並べる。スクロール位置は sessionStorage「pv:elastic」に保存する。
  *   - パターン3（v14・v15）… 暗室で現像した写真を干すように、傾きの違う紐を上から下へ何本も張る（画面の中で交差はしない）。
@@ -109,6 +121,9 @@
     baseLag: 0.5,   // 中央の列が追いつくまでの秒数
     lagScale: 0.1,  // 外側へ1列ごとに足す秒数
     wide: 910,      // この幅から7列（それより狭いと3列）
+    gap: 5,         // 列のあいだ・段のあいだ・左右の余白（画面の幅の %。v17 から app.js が置く）
+    padTop: 64,     // 一覧の上の余白（px）
+    padBottom: 140, // 一覧の下の余白（px）
     saveDelay: 200
   });
   // 動く一覧の動き方（v10）
@@ -123,7 +138,8 @@
     introStagger: 50,  // 写真ごとの開始のずれ
     caption: 40,       // 写真の下の番号・日付の高さ（並べるときに空ける）
     labelW: 104,       // 散らした「Change view」の大きさ（押しやすい大きさ）
-    labelH: 44
+    labelH: 44,
+    make: 0.5          // 画面の周り、画面の大きさの何倍まで部品を作るか（1枚分の枠より狭ければ1枚分。v17）
   });
   var PATH_RE = /^(photos|thumbs|mids)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.webp$/;
   var ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -194,12 +210,15 @@
     mode: null,          // 'drift'（パターン1）| 'elastic'（パターン2）| 'still'（動かない一覧）| 'choose'（選ぶ画面）
     pattern: null,       // 選んだパターン '1' | '2'（未選択は null）
     viewOpened: -1,      // 全画面表示を開いたときの写真の番号（動く一覧で、閉じたときに画面を動かすかの判断に使う）
-    viewByKey: false     // キーボードで開いたか
+    viewByKey: false,    // キーボードで開いたか
+    developed: Object.create(null) // 現像した写真のID（v17。片付けて作り直しても現像し直さない。見せ方を選び直すと空にする）
   };
 
   // 動く一覧の状態
   var drift = {
-    items: [],                 // 画面に置いた写真（元の写真と複製）
+    items: [],                 // 写真（元の写真と複製）と散らした文字の位置と大きさ。部品（el）は画面の周りのものだけ（v17）
+    originals: [],             // 一覧の番号 → 元の写真（複製でない方）
+    margin: { x: 0, y: 0 },    // 部品を作る範囲（画面の周り。この2倍より離れたら片付ける）
     cell: { w: 0, h: 0 },
     block: { w: 0, h: 0 },     // 写真をすべて並べた1周分の大きさ
     period: { w: 0, h: 0 },    // 複製を含めた1周分（画面より大きい）
@@ -472,7 +491,40 @@
   function tryDevelop(target) {
     if (target.getAttribute('data-loaded') === '1' && target.getAttribute('data-seen') === '1') {
       target.classList.add('is-developed');
+      var id = target.getAttribute('data-id');
+      if (id) state.developed[id] = true; // 片付けて作り直したときに、もう一度現像しないように（v17）
     }
+  }
+  // 一度現像した写真を作り直すときは、はじめから現像した状態にする（v17）。現像済みなら true
+  function keepDeveloped(target, id) {
+    if (!state.developed[id]) return false;
+    target.setAttribute('data-seen', '1');
+    target.classList.add('is-developed');
+    return true;
+  }
+
+  // ---------------------------------------------------------------- 画面の近くだけ部品を作る（v17）
+  // 動く見せ方では、全部の写真の位置と大きさを数字で持ち、部品（ボタン・画像・番号と日付）は画面の近くの写真だけ作る。
+  // 写真がいくら増えても、同時にある部品は画面数枚分で変わらない。
+  // ただし、いちばん新しい写真といちばん古い写真（Tab で一覧に入ったときの行き先）と、
+  // フォーカスのある写真とその前後（Tab で次へ進めるように）は、離れていても片付けない
+  var NEAR = Object.freeze({ make: 1, drop: 2 }); // 画面の上下 何画面分まで作るか・何画面分離れたら片付けるか
+
+  // 一覧の中でフォーカスのある写真の番号（なければ -1）
+  function focusedIndex(container) {
+    var a = document.activeElement;
+    if (!a || !container || a === container || !container.contains(a)) return -1;
+    var v = a.getAttribute ? a.getAttribute('data-index') : null;
+    return v === null || v === '' ? -1 : Number(v);
+  }
+  function isPinned(index, focus) {
+    var last = state.list.length - 1;
+    return index === 0 || index === last || (focus >= 0 && Math.abs(index - focus) <= 1);
+  }
+  // 読み上げで「全部で何枚のうち何枚目か」が分かるように（一覧には近くの写真しかないため）
+  function markPosition(li, index) {
+    li.setAttribute('aria-setsize', String(state.list.length));
+    li.setAttribute('aria-posinset', String(index + 1));
   }
   function markLoaded(target) {
     target.setAttribute('data-loaded', '1');
@@ -554,6 +606,7 @@
   // 一覧を描き直す（全部の写真。新しい順）
   function renderList(opts) {
     state.list = state.photos.slice();
+    state.developed = Object.create(null);
     updateCount();
     if (state.mode === 'drift' || state.mode === 'elastic' || state.mode === 'sway' || state.mode === 'choose') {
       clearGrid();
@@ -740,6 +793,7 @@
     drift.raf = 0;
     drift.last = 0;
     drift.items = [];
+    drift.originals = [];
     drift.drag = null;
     if (el.driftList) el.driftList.textContent = '';
     if (el.driftCopies) el.driftCopies.textContent = '';
@@ -751,12 +805,33 @@
     }
   }
 
-  function makeDriftItem(p, index, copy, w, h) {
-    var item = document.createElement(copy ? 'div' : 'li');
+  // 写真（または散らした「Change view」）1つ分の部品を作る（v17 から、画面の周りに来たときに作る）
+  function driftMakeEl(it) {
+    var item, b;
+    if (it.label) {
+      // 散らす「Change view」（v13。v11 の年の文字の代わり）。押すと見せ方を選ぶ画面を出す。
+      // 読み上げ・Tab は同じ働きの #pattern-switch で行う
+      item = document.createElement('div');
+      item.className = 'drift-item drift-label-item';
+      item.style.width = DRIFT.labelW + 'px';
+      b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'drift-label';
+      b.tabIndex = -1;
+      b.lang = 'en';
+      b.setAttribute('data-key', it.key);
+      b.textContent = el.patternSwitch ? el.patternSwitch.textContent : 'Change view';
+      item.appendChild(b);
+      it.el = item;
+      it.btn = b;
+      return;
+    }
+    var p = it.p, copy = it.copy, w = it.w, h = it.h, index = it.index;
+    item = document.createElement(copy ? 'div' : 'li');
     item.className = 'drift-item';
     item.style.width = w + 'px';
-    item.style.transform = 'translate3d(-10000px,-10000px,0)'; // 位置が決まるまで画面の外（遅延読込も始めない）
-    var b = document.createElement('button');
+    if (!copy) markPosition(item, index);
+    b = document.createElement('button');
     b.type = 'button';
     b.className = 'drift-tile';
     b.style.height = h + 'px';
@@ -764,6 +839,7 @@
     b.setAttribute('data-id', p.id);
     if (copy) b.tabIndex = -1; // 複製は読み上げ・フォーカスの対象にしない（親に aria-hidden）
     b.style.setProperty('--develop-delay', Math.round(seeded(p.id, 7) * 300) + 'ms');
+    keepDeveloped(b, p.id);
     var img = document.createElement('img');
     img.loading = 'lazy';
     img.decoding = 'async';
@@ -794,26 +870,49 @@
     });
     item.appendChild(b);
     item.appendChild(cap);
-    return { el: item, btn: b, x: 0, y: 0, w: w, h: h, cap: DRIFT.caption, ease: 0.5 + seeded(p.id, 5) * 0.5, index: index,
-      copy: copy, label: false, near: false, visible: false, intro: null };
+    it.el = item;
+    it.btn = b;
   }
 
-  // 散らす「Change view」（v13。v11 の年の文字の代わり）。押すと見せ方を選ぶ画面を出す。
-  // 読み上げ・Tab は同じ働きの #pattern-switch で行う
-  function makeDriftLabel(ease) {
-    var item = document.createElement('div');
-    item.className = 'drift-item drift-label-item';
-    item.style.width = DRIFT.labelW + 'px';
-    item.style.transform = 'translate3d(-10000px,-10000px,0)';
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'drift-label';
-    b.tabIndex = -1;
-    b.lang = 'en';
-    b.textContent = el.patternSwitch ? el.patternSwitch.textContent : 'Change view';
-    item.appendChild(b);
-    return { el: item, btn: b, x: 0, y: 0, w: DRIFT.labelW, h: DRIFT.labelH, cap: 0, ease: ease, index: -1,
-      copy: true, label: true, near: false, visible: false, intro: null };
+  // 動きによるずれを除いた、今の画面上の位置
+  function driftPos(it) {
+    return {
+      x: wrapPos(it.x + drift.cx, it.w, drift.period.w),
+      y: wrapPos(it.y + drift.cy, it.h + it.cap, drift.period.h)
+    };
+  }
+
+  function driftMount(it) {
+    if (!it || it.el) return;
+    driftMakeEl(it);
+    it.near = false;
+    it.visible = false;
+    var pos = driftPos(it);
+    it.el.style.transform = 'translate3d(' + pos.x.toFixed(1) + 'px,' + pos.y.toFixed(1) + 'px,0)';
+    if (it.label) el.driftLabels.appendChild(it.el);
+    else if (it.copy) el.driftCopies.appendChild(it.el);
+    else {
+      // 番号の順（読み上げ・Tab の順）に入れる
+      var c = el.driftList.firstElementChild;
+      while (c && Number(c.firstElementChild.getAttribute('data-index')) < it.index) c = c.nextElementSibling;
+      el.driftList.insertBefore(it.el, c);
+    }
+  }
+
+  function driftUnmount(it) {
+    if (!it.el) return;
+    var a = document.activeElement;
+    if (a && it.el.contains(a)) return; // フォーカスのある写真は片付けない
+    if (it.el.parentNode) it.el.parentNode.removeChild(it.el);
+    it.el = null;
+    it.btn = null;
+    it.near = false;
+    it.visible = false;
+  }
+
+  // フォーカスのある写真の前後の写真も作っておく（Tab で次へ進めるように）
+  function driftAround(index) {
+    [index - 1, index + 1].forEach(function (i) { driftMount(drift.originals[i]); });
   }
 
   // 写真を並べる。1周分（block）は画面より少し広く、写真が少ないときは複製して画面より大きくする
@@ -910,7 +1009,7 @@
       if (labelCell[k]) {
         var key = 'l' + k;
         base.push({
-          label: true, first: !!inFirst[k], w: DRIFT.labelW, h: DRIFT.labelH,
+          label: true, key: key, first: !!inFirst[k], w: DRIFT.labelW, h: DRIFT.labelH,
           x: c * cw + pad + Math.round(seeded(key, 2) * Math.max(0, availW - DRIFT.labelW)),
           y: r * ch + pad + Math.round(seeded(key, 3) * Math.max(0, ch - pad * 2 - DRIFT.labelH)) + lift,
           ease: 0.5 + seeded(key, 5) * 0.5
@@ -947,36 +1046,39 @@
       b.x = clamp(b.x, 8 - startX, vw - b.w - 8 - startX);
       b.y = clamp(b.y, Math.round(drift.top) + 8 - startY, vh - b.h - 8 - startY);
     });
-    var frag = document.createDocumentFragment();
-    var copyFrag = document.createDocumentFragment();
-    var labelFrag = document.createDocumentFragment();
-    var originals = [];
+    // 写真と文字の位置と大きさ（数字だけ）。部品は driftFrame が画面の周りに来たものだけ作る（v17）
     for (var iy = 0; iy < ny; iy++) {
       for (var ix = 0; ix < nx; ix++) {
         var copy = ix > 0 || iy > 0;
         base.forEach(function (b) {
-          var it = b.p ? makeDriftItem(b.p, b.index, copy, b.w, b.h) : makeDriftLabel(b.ease);
+          var it = b.p
+            ? { p: b.p, index: b.index, copy: copy, label: false, w: b.w, h: b.h, cap: DRIFT.caption, ease: 0.5 + seeded(b.p.id, 5) * 0.5 }
+            : { p: null, index: -1, copy: true, label: true, key: b.key + (copy ? '-' + ix + '-' + iy : ''), w: b.w, h: b.h, cap: 0, ease: b.ease };
           it.x = b.x + ix * bw;
           it.y = b.y + iy * bh;
+          it.el = null;
+          it.btn = null;
+          it.near = false;
+          it.visible = false;
+          it.intro = null;
           drift.items.push(it);
-          if (b.p && !copy) originals.push(it);
-          else (b.p ? copyFrag : labelFrag).appendChild(it.el);
+          if (b.p && !copy) drift.originals[b.index] = it;
         });
       }
     }
-    // 読み上げ・Tab の順は、散らし方にかかわらず新しい順（番号の大きい順）
-    originals.sort(function (a, b) { return a.index - b.index; });
-    originals.forEach(function (it) { frag.appendChild(it.el); });
+    // 読み上げ・Tab の順は、散らし方にかかわらず新しい順（番号の大きい順）。部品は番号の順に入れる
     el.driftList.setAttribute('aria-label', '写真');
-    el.driftList.appendChild(frag);
-    el.driftCopies.appendChild(copyFrag);
-    el.driftLabels.appendChild(labelFrag);
+    // 部品を作る範囲（画面の周り）と、片付ける範囲
+    drift.margin = { x: Math.max(cw, vw * DRIFT.make), y: Math.max(ch, vh * DRIFT.make) };
 
     // 位置: 散らし方が読み込むたびに変わるので、保存・復元はしない（v13）。いつも初めの位置から広がる
     drift.cx = drift.tx = startX;
     drift.cy = drift.ty = startY;
     drift.lx = drift.cx;
     drift.ly = drift.cy;
+    // いちばん新しい写真といちばん古い写真は、離れていても作っておく（Tab で一覧に入ったときの行き先）
+    driftMount(drift.originals[0]);
+    driftMount(drift.originals[list.length - 1]);
     if (!(opts && opts.keepPlace)) driftStartIntro();
     driftKick();
   }
@@ -1030,8 +1132,9 @@
     var moy = drift.mouse ? drift.mcy - 0.5 : 0;
 
     var vw = drift.vw, vh = drift.vh, pw = drift.period.w, ph = drift.period.h;
-    var marginX = drift.cell.w, marginY = drift.cell.h;
+    var marginX = drift.margin.x, marginY = drift.margin.y;
     var introOn = false;
+    var focus = focusedIndex(el.driftList);
     for (var i = 0; i < drift.items.length; i++) {
       var it = drift.items[i];
       var x = wrapPos(it.x + drift.cx + vx * DRIFT.parallax * it.ease + mox * it.w * DRIFT.mouse, it.w, pw);
@@ -1046,6 +1149,15 @@
         }
       }
       var near = x < vw + marginX && x + it.w > -marginX && y < vh + marginY && y + it.h + it.cap > -marginY;
+      // 画面の周りに来たら部品を作り、その2倍より離れたら片付ける（v17）
+      if (!it.el) {
+        if (!near) continue;
+        driftMount(it);
+      } else if (!near && !(it.index >= 0 && !it.copy && isPinned(it.index, focus)) &&
+          (x > vw + marginX * 2 || x + it.w < -marginX * 2 || y > vh + marginY * 2 || y + it.h + it.cap < -marginY * 2)) {
+        driftUnmount(it);
+        if (!it.el) continue;
+      }
       if (near || it.near) it.el.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0)';
       it.near = near;
       var visible = x < vw && x + it.w > 0 && y < vh && y + it.h > drift.top;
@@ -1078,11 +1190,7 @@
   }
 
   function driftOriginal(index) {
-    for (var i = 0; i < drift.items.length; i++) {
-      var it = drift.items[i];
-      if (!it.copy && it.index === index) return it;
-    }
-    return null;
+    return drift.originals[index] || null;
   }
 
   // 写真が画面に収まっていなければ、画面の中央へ来るよう動かす
@@ -1100,8 +1208,10 @@
   function driftFocus(index, reveal) {
     var it = driftOriginal(index);
     if (!it) return;
+    driftMount(it); // 部品がなければ作る（v17）
     drift.quietFocus = true; // このフォーカスでは focusin による移動をしない
     try { it.btn.focus({ preventScroll: true }); } finally { drift.quietFocus = false; }
+    driftAround(index);
     if (reveal) driftReveal(it);
   }
 
@@ -1216,6 +1326,7 @@
       if (b && byKey && state.mode === 'drift' && !state.open && !drift.quietFocus) {
         driftReveal(driftOriginal(Number(b.getAttribute('data-index'))));
       }
+      if (b && state.mode === 'drift') driftAround(Number(b.getAttribute('data-index'))); // Tab で次へ進めるように（v17）
       el.drift.scrollTop = 0; // フォーカスでブラウザーが中身をスクロールした場合は戻す（位置は transform で決める）
       el.drift.scrollLeft = 0;
     });
@@ -1262,8 +1373,17 @@
     }, 150);
   });
 
-  // ---------------------------------------------------------------- パターン2: 列（v12）
-  var elastic = { cols: [], raf: 0, last: 0, count: 0, saveTimer: 0, restoring: false };
+  // ---------------------------------------------------------------- パターン2: 並べる（v12。v17 から近くの写真だけ作る）
+  // 写真を 4:5 の枠で列に並べる（i 番目の写真は i % 列数 の列の、上から floor(i / 列数) 段目。横に読むと新しい順）。
+  // v17: 写真は1つのリスト（新しい順。読み上げ・Tab の順）に入れ、列と段の位置は app.js が計算して置く。
+  // 枠の大きさがそろっているので、何番目の写真がどこにあるかは計算で分かる。部品は画面の上下1画面分以内の写真だけ作る
+  var elastic = {
+    cols: [], raf: 0, last: 0, count: 0, saveTimer: 0, restoring: false,
+    list: null, width: 0, colW: 0, gap: 0, itemH: 0, pitch: 0,
+    reveal: -1,  // キーボードで選んだ写真（列がそろったあとで、見える所にあるか確かめる）
+    mounted: {}, // 部品を作った写真（番号 → li）
+    order: []    // 部品を作った写真の番号（小さい順）
+  };
 
   function elasticColumnCount() {
     return window.innerWidth >= ELASTIC.wide ? 7 : 3;
@@ -1275,6 +1395,10 @@
     elastic.last = 0;
     elastic.cols = [];
     elastic.count = 0;
+    elastic.list = null;
+    elastic.reveal = -1;
+    elastic.mounted = {};
+    elastic.order = [];
     if (elastic.saveTimer) clearTimeout(elastic.saveTimer);
     elastic.saveTimer = 0;
     if (el.elastic) {
@@ -1288,9 +1412,24 @@
     }
   }
 
+  // 「47 - 2026.10.11」（v13 から「No.」は付けない）。列が細くて1行に収まらないときは番号と日付の2行にする（elasticMeasure）
+  function makeElasticCaption(p) {
+    var cap = document.createElement('p');
+    cap.className = 'eg-cap';
+    cap.setAttribute('aria-hidden', 'true'); // 読み上げは写真の代替テキスト（撮影日時）で行う
+    [['eg-no', formatNo(p.no)], ['eg-sep', ' - '], ['eg-date', formatDot(p.ms)]].forEach(function (part) {
+      var s = document.createElement('span');
+      s.className = part[0];
+      s.textContent = part[1];
+      cap.appendChild(s);
+    });
+    return cap;
+  }
+
   function makeElasticItem(p, i) {
-    var fig = document.createElement('figure');
-    fig.className = 'eg-item';
+    var li = document.createElement('li');
+    li.className = 'eg-item';
+    markPosition(li, i);
     var b = document.createElement('button');
     b.type = 'button';
     b.className = 'eg-tile';
@@ -1304,64 +1443,151 @@
     img.addEventListener('load', function () { markLoaded(b); });
     img.addEventListener('error', function () { b.classList.add('is-broken'); markLoaded(b); });
     img.src = p.mid || p.src;
-    watchDevelop(b);
+    if (!keepDeveloped(b, p.id)) watchDevelop(b);
     var fb = document.createElement('span');
     fb.className = 'tile-fallback';
     fb.setAttribute('aria-hidden', 'true');
     fb.textContent = '表示できません';
     b.appendChild(img);
     b.appendChild(fb);
-    var cap = document.createElement('figcaption');
-    cap.className = 'eg-cap';
-    cap.setAttribute('aria-hidden', 'true'); // 読み上げは写真の代替テキスト（撮影日時）で行う
-    // 「47 - 2026.10.11」（v13 から「No.」は付けない）。列が細くて1行に収まらないときは番号と日付の2行にする（elasticFitCaptions）
-    [['eg-no', formatNo(p.no)], ['eg-sep', ' - '], ['eg-date', formatDot(p.ms)]].forEach(function (part) {
-      var s = document.createElement('span');
-      s.className = part[0];
-      s.textContent = part[1];
-      cap.appendChild(s);
-    });
-    fig.appendChild(b);
-    fig.appendChild(cap);
-    return fig;
+    li.appendChild(b);
+    li.appendChild(makeElasticCaption(p));
+    return li;
   }
 
-  // 写真を列に分けて並べる（i 番目の写真は i % 列数 の列へ。横に読むと新しい順）
+  // 列の数と幅、1枚分の高さ（枠＋番号と日付）を決め、一覧全体の高さを取る。
+  // 番号と日付が1行に収まらない幅（スマホの3列・狭いPCの7列）では、全部の写真を2行にする
+  // （写真ごとに行数が違うと、止まったときに行がそろわなくなるため）。数字と点は同じ幅の文字なので、
+  // いちばん新しい写真（番号の桁がいちばん多い）の番号と日付で1回だけ測る
+  function elasticMeasure() {
+    var list = elastic.list;
+    var n = elasticColumnCount();
+    var W = el.elastic.clientWidth || document.documentElement.clientWidth || window.innerWidth;
+    var gap = ELASTIC.gap * (window.innerWidth || W) / 100; // 列のあいだ・段のあいだ・左右の余白（CSS の 5vw と同じ）
+    var colW = Math.max(1, (W - 2 * gap - (n - 1) * gap) / n);
+    var probe = document.createElement('li');
+    probe.className = 'eg-item';
+    probe.setAttribute('aria-hidden', 'true');
+    probe.style.visibility = 'hidden';
+    probe.style.width = colW + 'px';
+    var frame = document.createElement('span');
+    frame.className = 'eg-tile';
+    var cap = makeElasticCaption(state.list[0]);
+    probe.appendChild(frame);
+    probe.appendChild(cap);
+    list.classList.remove('is-stacked');
+    list.appendChild(probe);
+    if (cap.scrollWidth > cap.clientWidth) list.classList.add('is-stacked');
+    var itemH = probe.getBoundingClientRect().height;
+    list.removeChild(probe);
+    elastic.count = n;
+    elastic.width = W;
+    elastic.colW = colW;
+    elastic.gap = gap;
+    elastic.itemH = itemH;
+    elastic.pitch = itemH + gap;
+    var rows = Math.ceil(state.list.length / n);
+    list.style.height = (ELASTIC.padTop + rows * itemH + Math.max(0, rows - 1) * gap + ELASTIC.padBottom).toFixed(1) + 'px';
+    list.setAttribute('data-cols', String(n));
+  }
+
+  function elasticMakeCols() {
+    var n = elastic.count;
+    var mid = (n - 1) / 2;
+    var y = window.pageYOffset || 0;
+    elastic.cols = [];
+    // 中央の列ほど早く、外側の列ほど遅れてついてくる
+    for (var i = 0; i < n; i++) elastic.cols.push({ lag: ELASTIC.baseLag + Math.abs(i - mid) * ELASTIC.lagScale, y: y, shown: 0 });
+  }
+
+  // 写真を列と段の位置に置く（列の遅れは transform）
+  function elasticPlace(li, i) {
+    var n = elastic.count, c = i % n, k = Math.floor(i / n);
+    li.setAttribute('data-col', String(c));
+    li.style.width = elastic.colW.toFixed(2) + 'px';
+    li.style.left = (elastic.gap + c * (elastic.colW + elastic.gap)).toFixed(2) + 'px';
+    li.style.top = (ELASTIC.padTop + k * elastic.pitch).toFixed(2) + 'px';
+    elasticShift(li, elastic.cols[c] ? elastic.cols[c].shown : 0);
+  }
+  function elasticShift(li, off) {
+    if (li.pvOff === off) return;
+    li.pvOff = off;
+    li.style.transform = off ? 'translate3d(0,' + off + 'px,0)' : '';
+  }
+
+  function elasticMount(i) {
+    if (elastic.mounted[i] || !state.list[i]) return;
+    var li = makeElasticItem(state.list[i], i);
+    elasticPlace(li, i);
+    // 番号の順（読み上げ・Tab の順）に入れる
+    var order = elastic.order, lo = 0, hi = order.length;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      if (order[mid] < i) lo = mid + 1; else hi = mid;
+    }
+    elastic.list.insertBefore(li, lo < order.length ? elastic.mounted[order[lo]] : null);
+    order.splice(lo, 0, i);
+    elastic.mounted[i] = li;
+  }
+
+  function elasticUnmount(i) {
+    var li = elastic.mounted[i];
+    if (!li) return;
+    var b = li.querySelector('.eg-tile');
+    if (b && state.developObserver && !b.classList.contains('is-developed')) state.developObserver.unobserve(b);
+    if (li.parentNode) li.parentNode.removeChild(li);
+    delete elastic.mounted[i];
+    var k = elastic.order.indexOf(i);
+    if (k >= 0) elastic.order.splice(k, 1);
+  }
+
+  // 画面の上下1画面分以内の写真を作り、2画面分より離れた写真を片付ける（列ごとの遅れの分もずらして考える）
+  function elasticSync() {
+    if (!elastic.list || state.mode !== 'elastic') return;
+    var N = state.list.length, n = elastic.count;
+    var vh = window.innerHeight || 600;
+    var top = elastic.list.getBoundingClientRect().top + ELASTIC.padTop; // 1段目の上端（画面の上端から）
+    var f = focusedIndex(elastic.list);
+    elastic.order.slice().forEach(function (i) {
+      if (isPinned(i, f)) return;
+      var y = top + Math.floor(i / n) * elastic.pitch + elastic.cols[i % n].shown;
+      if (y + elastic.itemH < -vh * NEAR.drop || y > vh * (1 + NEAR.drop)) elasticUnmount(i);
+    });
+    for (var c = 0; c < n; c++) {
+      var off = top + elastic.cols[c].shown;
+      var k0 = Math.max(0, Math.floor((-vh * NEAR.make - elastic.itemH - off) / elastic.pitch));
+      var k1 = Math.floor((vh * (1 + NEAR.make) - off) / elastic.pitch);
+      for (var k = k0; k <= k1; k++) {
+        if (k * n + c >= N) break;
+        elasticMount(k * n + c);
+      }
+    }
+    [0, N - 1, f - 1, f + 1].forEach(function (i) { if (i >= 0 && i < N) elasticMount(i); });
+  }
+
   function elasticBuild(opts) {
     elasticClear();
     if (!el.elastic || !state.list.length) return;
-    var n = elasticColumnCount();
-    var mid = (n - 1) / 2;
-    var y = window.pageYOffset || 0;
-    var wrap = document.createElement('div');
-    wrap.className = 'eg-grid';
-    wrap.style.setProperty('--eg-cols', String(n));
-    for (var i = 0; i < n; i++) {
-      var col = document.createElement('div');
-      col.className = 'eg-col';
-      // 中央の列ほど早く、外側の列ほど遅れてついてくる
-      elastic.cols.push({ el: col, lag: ELASTIC.baseLag + Math.abs(i - mid) * ELASTIC.lagScale, y: y, shown: 0 });
-      wrap.appendChild(col);
-    }
-    state.list.forEach(function (p, k) { elastic.cols[k % n].el.appendChild(makeElasticItem(p, k)); });
-    el.elastic.setAttribute('aria-label', '写真');
-    el.elastic.appendChild(wrap);
-    elastic.count = n;
-    elasticFitCaptions();
+    var list = document.createElement('ul');
+    list.className = 'eg-grid';
+    list.setAttribute('aria-label', '写真');
+    el.elastic.appendChild(list);
+    elastic.list = list;
+    elasticMeasure();
+    elasticMakeCols();
     if (opts && opts.restore) elasticRestore();
     elastic.cols.forEach(function (c) { c.y = window.pageYOffset || 0; });
+    elasticSync();
   }
 
-  // 番号と日付が1行に収まらない幅（スマホの3列・狭いPCの7列）では、全部の写真を2行にする。
-  // 写真ごとに行数が違うと、止まったときに行がそろわなくなるため、1枚でもはみ出せば全部2行
-  function elasticFitCaptions() {
-    var grid = el.elastic ? el.elastic.querySelector('.eg-grid') : null;
-    if (!grid) return;
-    grid.classList.remove('is-stacked');
-    var caps = grid.querySelectorAll('.eg-cap');
-    var over = false;
-    for (var i = 0; i < caps.length && !over; i++) over = caps[i].scrollWidth > caps[i].clientWidth;
-    if (over) grid.classList.add('is-stacked');
+  // 幅が変わったとき・文字が読み込まれたとき: 部品は作り直さずに置き直す（フォーカスもそのまま）
+  function elasticRelayout() {
+    if (!elastic.list) return;
+    var n0 = elastic.count;
+    elasticMeasure();
+    if (elastic.count !== n0) elasticMakeCols();
+    elastic.order.forEach(function (i) { elasticPlace(elastic.mounted[i], i); });
+    elasticSync();
   }
 
   function elasticKick() {
@@ -1377,6 +1603,7 @@
     elastic.last = now;
     var y = window.pageYOffset || 0;
     var moving = false;
+    var changed = false;
     elastic.cols.forEach(function (c) {
       // 列は lag 秒ほどかけて、いまのスクロール位置に追いつく
       c.y += (y - c.y) * (1 - Math.exp(-dt / (c.lag * 1000 / 3)));
@@ -1384,20 +1611,40 @@
       else moving = true;
       var off = Math.round((y - c.y) * 10) / 10;
       if (off !== c.shown) {
-        c.el.style.transform = off ? 'translate3d(0,' + off + 'px,0)' : '';
         c.shown = off;
+        changed = true;
       }
     });
+    if (changed) {
+      var n = elastic.count;
+      elastic.order.forEach(function (i) { elasticShift(elastic.mounted[i], elastic.cols[i % n].shown); });
+    }
+    elasticSync();
     if (moving) {
       elastic.raf = requestAnimationFrame(elasticFrame);
     } else {
       elastic.last = 0;
       el.elastic.removeAttribute('data-moving');
+      elasticCheckReveal();
     }
+  }
+
+  // キーボードで選んだ写真が、列がそろったあとで画面の外にあれば、見える所までスクロールする（v17）。
+  // （Tab を続けて押すと、列が遅れて動いている途中の位置でブラウザーがスクロールするため）
+  function elasticCheckReveal() {
+    var i = elastic.reveal;
+    elastic.reveal = -1;
+    if (i < 0 || !elastic.list || focusedIndex(elastic.list) !== i) return;
+    var vh = window.innerHeight || 600;
+    var y0 = elastic.list.getBoundingClientRect().top + ELASTIC.padTop + Math.floor(i / elastic.count) * elastic.pitch;
+    var y1 = y0 + elastic.itemH;
+    if (y0 < 0) window.scrollBy(0, Math.floor(y0) - 16);
+    else if (y1 > vh) window.scrollBy(0, Math.ceil(y1 - vh) + 16);
   }
 
   window.addEventListener('scroll', function () {
     if (state.mode !== 'elastic' || !elastic.cols.length) return;
+    elasticSync(); // 近づいた写真を作り、離れた写真を片付ける（v17）
     elasticKick();
     if (state.open || elastic.restoring) return;
     if (elastic.saveTimer) clearTimeout(elastic.saveTimer);
@@ -1405,13 +1652,13 @@
   }, { passive: true });
 
   window.addEventListener('resize', function () {
-    if (state.mode !== 'elastic' || !elastic.cols.length) return;
-    if (elasticColumnCount() !== elastic.count) elasticBuild({ restore: false }); // 列の数が変わったときだけ並べ直す
-    else elasticFitCaptions();
+    if (state.mode !== 'elastic' || !elastic.list) return;
+    if (el.elastic.clientWidth === elastic.width && elasticColumnCount() === elastic.count) elasticSync(); // 高さだけ変わった
+    else elasticRelayout();
   });
   // 文字（DotGothic16）が読み込まれると幅が変わるので、もう一度確かめる
   if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === 'function') {
-    document.fonts.ready.then(function () { if (state.mode === 'elastic') elasticFitCaptions(); }, function () {});
+    document.fonts.ready.then(function () { if (state.mode === 'elastic') elasticRelayout(); }, function () {});
   }
 
   function elasticSaveNow() {
@@ -1432,18 +1679,40 @@
     requestAnimationFrame(function () { requestAnimationFrame(function () { elastic.restoring = false; }); });
   }
 
+  // 全画面表示を閉じたとき: 画面の外ならその写真の所までスクロールしてから（部品がなければ作って）フォーカスを戻す
   function elasticFocus(index) {
-    var b = el.elastic ? el.elastic.querySelector('.eg-tile[data-index="' + index + '"]') : null;
-    if (!b) return;
+    if (!elastic.list || index < 0 || index >= state.list.length) return;
+    var vh = window.innerHeight || 600;
+    var y0 = elastic.list.getBoundingClientRect().top + ELASTIC.padTop + Math.floor(index / elastic.count) * elastic.pitch;
+    var y1 = y0 + elastic.itemH;
+    if (y0 < 0 || y1 > vh) {
+      window.scrollBy(0, Math.round((y0 + y1) / 2 - vh / 2));
+      // 遠くの写真へ送ってから閉じたときは、列を追いかけさせずにその場でそろえる（v17）
+      var y = window.pageYOffset || 0;
+      elastic.cols.forEach(function (c) { c.y = y; c.shown = 0; });
+      elastic.order.forEach(function (i) { elasticShift(elastic.mounted[i], 0); });
+    }
+    elasticMount(index);
+    var b = elastic.mounted[index].querySelector('.eg-tile');
     b.focus({ preventScroll: true });
-    var r = b.getBoundingClientRect();
-    if (r.top < 0 || r.bottom > window.innerHeight) b.scrollIntoView({ block: 'center' });
+    elasticSync(); // フォーカスした写真の前後も
   }
 
   if (el.elastic) {
     el.elastic.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('.eg-tile') : null;
       if (b && state.mode === 'elastic') openViewer(Number(b.getAttribute('data-index')), { from: 'elastic' });
+    });
+    // Tab で写真へ移ったら、前後の写真も作っておく（Tab で次へ進めるように。v17）。
+    // 列がそろったあとで、選んだ写真が見える所にあるか確かめる
+    el.elastic.addEventListener('focusin', function (e) {
+      if (state.mode !== 'elastic') return;
+      var b = e.target.closest ? e.target.closest('.eg-tile') : null;
+      var byKey = true;
+      try { byKey = !!b && b.matches(':focus-visible'); } catch (err) { /* :focus-visible 非対応 */ }
+      elastic.reveal = b && byKey ? Number(b.getAttribute('data-index')) : -1;
+      elasticSync();
+      elasticKick();
     });
   }
 
@@ -1526,6 +1795,7 @@
     var li = document.createElement('li');
     li.className = 'sw-item';
     li.setAttribute('data-row', String(row));
+    markPosition(li, index);
     li.style.left = Math.round(ax - w / 2) + 'px';
     li.style.top = Math.round(ay - SWAY.clip / 2) + 'px';
     li.style.width = w + 'px';
@@ -1548,7 +1818,7 @@
     img.addEventListener('load', function () { markLoaded(b); });
     img.addEventListener('error', function () { b.classList.add('is-broken'); markLoaded(b); });
     img.src = p.mid || p.src;
-    watchDevelop(b);
+    if (!keepDeveloped(b, p.id)) watchDevelop(b);
     var fb = document.createElement('span');
     fb.className = 'tile-fallback';
     fb.setAttribute('aria-hidden', 'true');
@@ -1560,6 +1830,8 @@
     return li;
   }
 
+  // 並べ方を決める（v17 から、紐・写真・札の位置と大きさを数字として全部の日の分だけ計算し、
+  // 部品は画面の近くの紐だけ swaySync が作る）
   function swayBuild(opts) {
     var keep = (opts && opts.offsets) || null; // 並べ直す前の、日ごとのスライド位置
     swayClear();
@@ -1569,6 +1841,8 @@
     var W = el.sway.clientWidth || document.documentElement.clientWidth || window.innerWidth;
     var vh = window.innerHeight || 600;
     var m = swayMetrics(W, vh);
+    sway.width = W;
+    sway.side = m.side;
     // 撮影日ごとにまとめる（新しい日から。日の中も新しい順）
     var days = [], byKey = {};
     state.list.forEach(function (p, i) {
@@ -1586,10 +1860,6 @@
     days.forEach(function (d) {
       specs.push({ key: d.key, lead: [{ kind: 'date', w: SWAY.tagW, lines: [d.key.slice(0, 4), d.key.slice(5)] }], photos: d.photos });
     });
-    var lineFrag = document.createDocumentFragment();
-    var bandFrag = document.createDocumentFragment();
-    var listFrag = document.createDocumentFragment();
-    var tagFrag = document.createDocumentFragment();
     var prev = null;
     var height = 0;
     specs.forEach(function (spec, ri) {
@@ -1598,7 +1868,7 @@
       var sign = (ri % 2 ? 1 : -1) * (stable(key, 2) < 0.8 ? 1 : -1);
       var deg = (2 + stable(key, 1) * 5) * sign;
       var slope = Math.tan(deg * Math.PI / 180);
-      // 吊るすもの（左から: 札 → 写真と番号の札 → …）。すき間は写真ごとに少し違う
+      // 吊るすもの（左から: 札 → 写真 → …）。すき間は写真ごとに少し違う
       var units = [];
       spec.lead.forEach(function (t) {
         units.push({ things: [{ kind: t.kind, w: t.w, h: t.h || swayTagHeight(t.lines.length), lines: t.lines, dx: t.w / 2 }], w: t.w });
@@ -1650,63 +1920,28 @@
         });
       }
       var row = {
-        key: spec.key, index: ri, slope: slope, yMid: yMid, maxDrop: maxDrop, bodies: [],
-        max: Math.max(0, Math.ceil(contentW - W)), cx: 0, tx: 0, v: 0, near: false,
+        key: spec.key, index: ri, deg: deg, slope: slope, yMid: yMid, maxDrop: maxDrop, bodies: [],
+        max: Math.max(0, Math.ceil(contentW - W)), cx: 0, tx: 0, v: 0, near: false, mounted: false, nodes: null,
         y: (function (s, ym) { return function (px) { return ym + s * (px - W / 2); }; })(slope, yMid)
       };
       row.top = Math.min(row.y(0), row.y(W)) - SWAY.clip;
       row.bottom = Math.max(row.y(0), row.y(W)) + maxDrop;
       if (keep && keep[spec.key]) row.cx = row.tx = clamp(keep[spec.key], 0, row.max);
-      // 紐（画面の端より少し外まで。紐は動かず、写真と札が紐に沿って動く）
-      var lx0 = -40, lx1 = W + 40;
-      var seg = document.createElement('div');
-      seg.className = 'sw-line';
-      seg.setAttribute('data-row', String(ri));
-      seg.style.left = lx0 + 'px';
-      seg.style.top = row.y(lx0).toFixed(1) + 'px';
-      seg.style.width = Math.ceil((lx1 - lx0) / Math.cos(Math.atan(slope))) + 'px';
-      seg.style.transform = 'rotate(' + deg.toFixed(3) + 'deg)';
-      lineFrag.appendChild(seg);
-      // 紐の帯（写真のないところでも、指やマウスで紐をスライドできるように）
-      var band = document.createElement('div');
-      band.className = 'sw-band' + (row.max ? ' is-slidable' : '');
-      band.setAttribute('data-row', String(ri));
-      band.setAttribute('data-max', String(row.max));
-      band.style.top = Math.round(row.top) + 'px';
-      band.style.height = Math.round(row.bottom - row.top) + 'px';
-      // 帯は紐の傾きに沿った平行四辺形にする（となりの日の帯と重ならないように）
-      var bt0 = row.y(0) - SWAY.clip - row.top, btW = row.y(W) - SWAY.clip - row.top;
-      band.style.clipPath = 'polygon(0 ' + bt0.toFixed(1) + 'px, 100% ' + btW.toFixed(1) + 'px, 100% ' +
-        (btW + SWAY.clip + maxDrop).toFixed(1) + 'px, 0 ' + (bt0 + SWAY.clip + maxDrop).toFixed(1) + 'px)';
-      band.style.webkitClipPath = band.style.clipPath; // 古い Safari
-      bandFrag.appendChild(band);
       things.forEach(function (t) {
-        var ay = row.y(t.x);
-        var node, len, id;
+        t.ay = row.y(t.x);
+        var len, id;
         if (t.kind === 'photo') {
-          node = makeSwayItem(t.ph.p, t.ph.index, t.w, t.h, t.x, ay, ri);
-          listFrag.appendChild(node);
           len = t.h * 0.7 + 10;
           id = t.ph.p.id;
-          sway.items[t.ph.index] = { row: row, x0: t.x - t.w / 2, x1: t.x + t.w / 2 };
+          var top = t.ay - SWAY.clip / 2;
+          sway.items[t.ph.index] = { row: row, x0: t.x - t.w / 2, x1: t.x + t.w / 2, y0: top, y1: top + SWAY.clip - 4 + t.h };
         } else {
-          var extra = null;
-          if (t.kind === 'switch') {
-            extra = document.createElement('button');
-            extra.type = 'button';
-            extra.className = 'sw-label';
-            extra.tabIndex = -1;
-            extra.lang = 'en';
-            extra.textContent = el.patternSwitch ? el.patternSwitch.textContent : 'Change view';
-          }
-          node = makeSwayTag(t.kind, t.lines, t.x, ay, t.w, t.thread, ri, extra);
-          tagFrag.appendChild(node);
           len = t.thread + t.h / 2 + 6;
           id = (t.ph ? t.ph.p.id : key) + '-' + t.kind;
         }
         var w0 = 2 * Math.PI / (SWAY.period * Math.sqrt(len / SWAY.lenRef));
         row.bodies.push({
-          el: node, row: row, x: t.x, w0: w0, th: 0, om: 0, shown: '',
+          thing: t, el: null, row: row, x: t.x, w0: w0, th: 0, om: 0, shown: '',
           dir: (slope >= 0 ? 1 : -1) * (0.6 + stable(id, 6) * 0.8),
           wind: 0.7 + stable(id, 7) * 0.6
         });
@@ -1715,23 +1950,129 @@
       sway.rows.push(row);
       prev = row;
     });
-    sway.width = W;
-    sway.side = m.side;
-    el.swayLines.appendChild(lineFrag);
-    el.swayBands.appendChild(bandFrag);
     el.swayList.setAttribute('aria-label', '写真');
-    el.swayList.appendChild(listFrag);
-    el.swayTags.appendChild(tagFrag);
     el.sway.style.height = Math.ceil(height + 140) + 'px';
-    sway.rows.forEach(function (r) { if (r.cx) swayPaintRow(r); });
     if (opts && opts.restore) swayRestore();
     else if (opts && opts.ratio) window.scrollTo(0, Math.round(opts.ratio * el.sway.offsetHeight));
     sway.lastY = window.pageYOffset || 0;
+    swaySync();
     swayScheduleGust(2500 + Math.random() * 2500);
+  }
+
+  // 紐1本分の部品（紐の線・指で触る帯・写真・札）を作る
+  function swayMount(row) {
+    if (row.mounted) return;
+    var W = sway.width;
+    var ri = row.index;
+    // 紐（画面の端より少し外まで。紐は動かず、写真と札が紐に沿って動く）
+    var lx0 = -40, lx1 = W + 40;
+    var line = document.createElement('div');
+    line.className = 'sw-line';
+    line.setAttribute('data-row', String(ri));
+    line.style.left = lx0 + 'px';
+    line.style.top = row.y(lx0).toFixed(1) + 'px';
+    line.style.width = Math.ceil((lx1 - lx0) / Math.cos(Math.atan(row.slope))) + 'px';
+    line.style.transform = 'rotate(' + row.deg.toFixed(3) + 'deg)';
+    // 紐の帯（写真のないところでも、指やマウスで紐をスライドできるように）
+    var band = document.createElement('div');
+    band.className = 'sw-band' + (row.max ? ' is-slidable' : '');
+    band.setAttribute('data-row', String(ri));
+    band.setAttribute('data-max', String(row.max));
+    band.style.top = Math.round(row.top) + 'px';
+    band.style.height = Math.round(row.bottom - row.top) + 'px';
+    // 帯は紐の傾きに沿った平行四辺形にする（となりの日の帯と重ならないように）
+    var bt0 = row.y(0) - SWAY.clip - row.top, btW = row.y(W) - SWAY.clip - row.top;
+    band.style.clipPath = 'polygon(0 ' + bt0.toFixed(1) + 'px, 100% ' + btW.toFixed(1) + 'px, 100% ' +
+      (btW + SWAY.clip + row.maxDrop).toFixed(1) + 'px, 0 ' + (bt0 + SWAY.clip + row.maxDrop).toFixed(1) + 'px)';
+    band.style.webkitClipPath = band.style.clipPath; // 古い Safari
+    var items = [], tags = [];
+    var listFrag = document.createDocumentFragment();
+    var tagFrag = document.createDocumentFragment();
+    row.bodies.forEach(function (b) {
+      var t = b.thing;
+      if (t.kind === 'photo') {
+        b.el = makeSwayItem(t.ph.p, t.ph.index, t.w, t.h, t.x, t.ay, ri);
+        items.push(b.el);
+        listFrag.appendChild(b.el);
+      } else {
+        var extra = null;
+        if (t.kind === 'switch') {
+          extra = document.createElement('button');
+          extra.type = 'button';
+          extra.className = 'sw-label';
+          extra.tabIndex = -1;
+          extra.lang = 'en';
+          extra.textContent = el.patternSwitch ? el.patternSwitch.textContent : 'Change view';
+        }
+        b.el = makeSwayTag(t.kind, t.lines, t.x, t.ay, t.w, t.thread, ri, extra);
+        tags.push(b.el);
+        tagFrag.appendChild(b.el);
+      }
+      b.shown = '';
+    });
+    el.swayLines.appendChild(line);
+    el.swayBands.appendChild(band);
+    el.swayTags.appendChild(tagFrag);
+    // 写真は番号の順（読み上げ・Tab の順）に入れる: 次に作ってある紐の最初の写真の前
+    var next = null;
+    for (var k = ri + 1; k < sway.rows.length && !next; k++) {
+      var r = sway.rows[k];
+      if (r.mounted && r.nodes.items.length) next = r.nodes.items[0];
+    }
+    el.swayList.insertBefore(listFrag, next);
+    row.nodes = { line: line, band: band, items: items, tags: tags };
+    row.mounted = true;
+    swayPaintRow(row);
+  }
+
+  // 紐1本分の部品を片付ける（スライド位置は数字で覚えておく）
+  function swayUnmount(row) {
+    if (!row.mounted) return;
+    var n = row.nodes;
+    n.items.forEach(function (li) {
+      var b = li.querySelector('.sw-tile');
+      if (b && state.developObserver && !b.classList.contains('is-developed')) state.developObserver.unobserve(b);
+    });
+    [n.line, n.band].concat(n.items, n.tags).forEach(function (node) {
+      if (node.parentNode) node.parentNode.removeChild(node);
+    });
+    row.bodies.forEach(function (b) { b.el = null; b.shown = ''; b.th = 0; b.om = 0; });
+    row.nodes = null;
+    row.mounted = false;
+    row.near = false;
+    row.v = 0;
+    row.cx = row.tx;
+  }
+
+  // 画面の上下1画面分以内の紐を作り、2画面分より離れた紐を片付ける
+  function swaySync() {
+    if (state.mode !== 'sway' || !sway.rows.length || !el.sway) return;
+    var top = el.sway.getBoundingClientRect().top; // 画面の上端から見た、紐の並びの上端
+    var vh = window.innerHeight || 600;
+    var makeLo = -top - vh * NEAR.make, makeHi = -top + vh * (1 + NEAR.make);
+    var dropLo = -top - vh * NEAR.drop, dropHi = -top + vh * (1 + NEAR.drop);
+    var pin = {};
+    var f = focusedIndex(el.swayList);
+    [0, state.list.length - 1, f - 1, f, f + 1].forEach(function (i) {
+      var it = sway.items[i];
+      if (it) pin[it.row.index] = true;
+    });
+    if (sway.drag) pin[sway.drag.row.index] = true;
+    for (var i = 0; i < sway.rows.length; i++) {
+      var r = sway.rows[i];
+      var shift = Math.abs(r.slope * r.cx); // スライドした紐は、写真が紐に沿って上下にずれる
+      var lo = r.top - shift, hi = r.bottom + shift;
+      if (r.mounted) {
+        if ((hi < dropLo || lo > dropHi) && !pin[i]) swayUnmount(r);
+      } else if ((hi >= makeLo && lo <= makeHi) || pin[i]) {
+        swayMount(r);
+      }
+    }
   }
 
   // 写真・札の位置（紐に沿ったスライド）と傾き
   function swayPaint(b) {
+    if (!b.el) return; // 部品を片付けた紐（v17）
     var r = b.row;
     var deg = Math.round(b.th * 5729.58) / 100;
     var s = (r.cx ? 'translate3d(' + (-r.cx).toFixed(1) + 'px,' + (-r.slope * r.cx).toFixed(1) + 'px,0)' : '') +
@@ -1789,6 +2130,10 @@
     var ease = 1 - Math.pow(1 - SWAY.slideEase, dt / 16.67);
     for (var i = 0; i < sway.rows.length; i++) {
       var row = sway.rows[i];
+      if (!row.mounted) { // 部品のない紐（画面から離れている。v17）: スライドは止まる位置へ
+        row.cx = row.tx;
+        continue;
+      }
       if (row.bottom < lo || row.top > hi) {
         // 画面から離れた紐は、揺れを止めてまっすぐに戻しておく（スライドは止まった位置へ）
         if (row.near || row.cx !== row.tx) {
@@ -1846,6 +2191,7 @@
 
   window.addEventListener('scroll', function () {
     if (state.mode !== 'sway' || !sway.rows.length) return;
+    swaySync(); // 近づいた紐を作り、離れた紐を片付ける（v17）
     swayKick();
     swayScheduleSave();
   }, { passive: true });
@@ -1948,6 +2294,7 @@
       var byKey = true;
       try { byKey = !!b && b.matches(':focus-visible'); } catch (err) { /* :focus-visible 非対応 */ }
       if (b && byKey && !sway.quietFocus && state.mode === 'sway') swayReveal(Number(b.getAttribute('data-index')), false);
+      if (b && state.mode === 'sway') swaySync(); // 前後の写真の紐も作っておく（Tab で次へ進めるように。v17）
     });
     el.sway.addEventListener('scroll', function () { el.sway.scrollLeft = 0; });
   }
@@ -2007,14 +2354,24 @@
     requestAnimationFrame(function () { requestAnimationFrame(function () { sway.restoring = false; }); });
   }
 
+  // 全画面表示を閉じたとき: その写真の紐を見える所までスライドし、画面の外ならその写真の所までスクロールしてから
+  // （部品がなければ作って）フォーカスを戻す
   function swayFocus(index) {
-    var b = el.swayList ? el.swayList.querySelector('.sw-tile[data-index="' + index + '"]') : null;
-    if (!b) return;
+    var it = sway.items[index];
+    if (!it || !el.sway) return;
     swayReveal(index, true);
+    var vh = window.innerHeight || 600;
+    var top = el.sway.getBoundingClientRect().top;
+    var shift = -it.row.slope * it.row.tx; // 紐に沿ってスライドした分の上下のずれ
+    var y0 = top + it.y0 + shift, y1 = top + it.y1 + shift;
+    if (y0 < 0 || y1 > vh) window.scrollBy(0, Math.round((y0 + y1) / 2 - vh / 2));
+    swaySync();
+    if (!it.row.mounted) swayMount(it.row);
+    var b = el.swayList.querySelector('.sw-tile[data-index="' + index + '"]');
+    if (!b) return;
     sway.quietFocus = true;
     try { b.focus({ preventScroll: true }); } finally { sway.quietFocus = false; }
-    var r = b.getBoundingClientRect();
-    if (r.top < 0 || r.bottom > window.innerHeight) window.scrollBy(0, Math.round(r.top + r.height / 2 - window.innerHeight / 2));
+    swaySync(); // フォーカスした写真の前後の紐も
   }
 
   // ---------------------------------------------------------------- 見せ方の切り替え（パターン・視差効果を減らす設定）
