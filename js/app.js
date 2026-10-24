@@ -1,5 +1,5 @@
 /*
- * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v13 / 版 13.0）
+ * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v14 / 版 14.0）
  * HTML / CSS / Vanilla JavaScript のみ。外部CDN・ライブラリなし。URLはすべて相対（GitHub Pages のサブパスで動作）。
  *
  * ■ 一覧（v13）
@@ -43,13 +43,20 @@
  *
  * ■ 見せ方のパターン（v12）
  *   - 開いたときに選ぶ画面（Choose a view）で選ぶ。パターン1 = 散らばる、
- *       パターン2 = 列（data-mode="elastic"。Codrops の作例「Elastic Grid Scroll」の動きの考え方を参考に書いたもの）。
+ *       パターン2 = 並べる（data-mode="elastic"。Codrops の作例「Elastic Grid Scroll」の動きの考え方を参考に書いたもの。
+ *       v13 までの名前は「列」）、パターン3 = 揺れる（data-mode="sway"。v14。このサイト用に考えた見せ方）。
  *       選んだパターンは sessionStorage「pv:pattern」に保存し、同じタブの再読込・戻る操作では選ぶ画面を出さない。
  *       前回選んだものは localStorage「pv:patternLast」に覚えておき、選ぶ画面で最初に選ばれた状態にする。
  *       画面の「Change view」からいつでも選び直せる。視差効果を減らす設定のときは選ぶ画面を出さず、動かない一覧にする。
  *   - パターン2 … 写真を 4:5 の枠で列に並べる（幅 910px 未満は3列、以上は7列）。ページは普通にスクロールし、
  *       各列はスクロールに遅れてついてくる（中央の列 0.5 秒、外側へ1列ごとに 0.1 秒ずつ遅い）。止まるとそろう。
  *       撮影年の範囲・「Change view」は一覧の上に並べる。スクロール位置は sessionStorage「pv:elastic」に保存する。
+ *   - パターン3（v14）… 暗室で現像した写真を干すように、傾きの違う紐を上から下へ何本も張り（交差はしない）、
+ *       写真（ふちなし・元の縦横比）を上の真ん中のクリップで吊るし、右横に札（番号・年・月日）を下げる。
+ *       1本に吊るす枚数はスマホ1〜2枚・タブレット2〜4枚・PC 3〜6枚。最初の紐には撮影年の範囲と「Change view」の札。
+ *       ページは普通に縦へスクロールする。写真と札は振り子のように揺れ（大きい写真ほどゆっくり）、
+ *       スクロールの勢いで傾き、止まると数秒で収まる。ときどき左から右へそよ風が通り抜け、少しだけ揺らす。
+ *       並びは写真ごとに決まっていて再読込しても同じ。スクロール位置は sessionStorage「pv:sway」に保存する。
  */
 (function () {
   'use strict';
@@ -66,11 +73,32 @@
     fontWait: 1500
   });
   var KEYS = Object.freeze({
-    scroll: 'pv:scroll', pattern: 'pv:pattern', patternLast: 'pv:patternLast', elastic: 'pv:elastic'
+    scroll: 'pv:scroll', pattern: 'pv:pattern', patternLast: 'pv:patternLast', elastic: 'pv:elastic', sway: 'pv:sway'
   });
   // v12 までの保存値（選んだ年・パターン1の位置）。もう使わないので見つけたら消す
   var RETIRED_KEYS = [['localStorage', 'pv:selectedYear'], ['sessionStorage', 'pv:drift']];
-  var PATTERNS = ['1', '2']; // 1 = 散らばる（drift）、2 = 列（elastic）
+  var PATTERNS = ['1', '2', '3']; // 1 = 散らばる（drift）、2 = 並べる（elastic）、3 = 揺れる（sway。v14）
+  // パターン3の動き方（v14）
+  var SWAY = Object.freeze({
+    tagW: 40,          // 札の幅（番号・年・月日の3行）
+    tagH: 52,          // 札の高さ
+    labelW: 54,        // 「Change view」の札の幅（2行）
+    labelH: 40,        // 「Change view」の札の高さ
+    tagGap: 8,         // 写真と札のあいだ
+    itemGap: 14,       // 札と次の写真のあいだ（いちばん狭いとき）
+    lineGap: 34,       // 吊るしたものの下端と次の紐のあいだ
+    clip: 14,          // クリップの高さ（紐がクリップの真ん中を通る）
+    period: 1700,      // 高さ150pxの写真が1往復する時間（ms）。大きい写真ほどゆっくり
+    lenRef: 115,       // そのときの振り子の長さ（写真の高さ × 0.7 ＋ 10）
+    decay: 1100,       // 揺れが 1/e に収まるまでの時間（ms）
+    scroll: 0.07,      // スクロールの速さ 1px/ms あたりの傾き（rad）
+    maxTilt: 0.35,     // いちばん大きい傾き（rad。約20度）
+    gustEvery: [6000, 14000], // そよ風の間隔（ms）
+    gustSpeed: 0.9,    // そよ風が横切る速さ（px/ms）
+    gustWidth: 320,    // そよ風の幅（px）
+    gustTilt: 0.035,   // そよ風で傾く大きさ（rad。約2度）
+    saveDelay: 200
+  });
   // パターン2の動き方（v12）
   var ELASTIC = Object.freeze({
     baseLag: 0.5,   // 中央の列が追いつくまでの秒数
@@ -127,6 +155,10 @@
     driftCopies: $('drift-copies'),
     driftLabels: $('drift-labels'),
     elastic: $('elastic'),
+    sway: $('sway'),
+    swayLines: $('sway-lines'),
+    swayList: $('sway-list'),
+    swayTags: $('sway-tags'),
     chooser: $('chooser'),
     patternSwitch: $('pattern-switch')
   };
@@ -325,6 +357,7 @@
     state.rendered = 0;
     driftClear();
     elasticClear();
+    swayClear();
     el.grid.textContent = '';
     el.count.textContent = '';
     el.range.textContent = '';
@@ -516,17 +549,19 @@
   function renderList(opts) {
     state.list = state.photos.slice();
     updateCount();
-    if (state.mode === 'drift' || state.mode === 'elastic' || state.mode === 'choose') {
+    if (state.mode === 'drift' || state.mode === 'elastic' || state.mode === 'sway' || state.mode === 'choose') {
       clearGrid();
       el.cover.hidden = true; // 動く見せ方では表紙を出さない（v10）
       el.sentinel.hidden = true;
       if (state.observer) state.observer.disconnect();
-      if (state.mode === 'drift') { elasticClear(); driftBuild(); }
-      else if (state.mode === 'elastic') { driftClear(); elasticBuild({ restore: !!(opts && opts.restore) }); }
-      else { driftClear(); elasticClear(); } // 選ぶ画面の間は一覧を作らない
+      if (state.mode === 'drift') { elasticClear(); swayClear(); driftBuild(); }
+      else if (state.mode === 'elastic') { driftClear(); swayClear(); elasticBuild({ restore: !!(opts && opts.restore) }); }
+      else if (state.mode === 'sway') { driftClear(); elasticClear(); swayBuild({ restore: !!(opts && opts.restore) }); }
+      else { driftClear(); elasticClear(); swayClear(); } // 選ぶ画面の間は一覧を作らない
     } else {
       driftClear();
       elasticClear();
+      swayClear();
       renderGrid();
     }
   }
@@ -601,6 +636,7 @@
     cancelPendingSave();
     if (!state.ready || state.restoring) return;
     if (state.mode === 'elastic') { elasticSaveNow(); return; }
+    if (state.mode === 'sway') { swaySaveNow(); return; }
     if (state.mode !== 'still') return;
     storageSet('sessionStorage', KEYS.scroll, JSON.stringify(captureScroll()));
   }
@@ -665,9 +701,11 @@
     return Math.floor(Math.random() * 4294967296) >>> 0;
   })();
 
-  // 写真ID（など）と種から乱数（0〜1）を作る
-  function seeded(id, salt) {
-    var h = (2166136261 ^ salt ^ LOAD_SEED) >>> 0;
+  // 写真ID（など）と種から乱数（0〜1）を作る。seeded は読み込むたびに変わり、stable はいつも同じ（v14）
+  function seeded(id, salt) { return hashRand(id, salt, LOAD_SEED); }
+  function stable(id, salt) { return hashRand(id, salt, 0); }
+  function hashRand(id, salt, seed) {
+    var h = (2166136261 ^ salt ^ seed) >>> 0;
     for (var i = 0; i < id.length; i++) {
       h ^= id.charCodeAt(i);
       h = Math.imul(h, 16777619);
@@ -1403,11 +1441,419 @@
     });
   }
 
+  // ---------------------------------------------------------------- パターン3: 揺れる（v14）
+  // 斜めに張った紐に写真を吊るし（ふちなし・上の真ん中をクリップで留める）、写真の右横に札（番号と撮影日）を下げる。
+  // ページは普通に縦へスクロールする。写真と札は振り子のように揺れる（大きい写真ほどゆっくり）。
+  // スクロールの勢いで傾き、止まると数秒で収まる。ときどき左から右へそよ風が通り抜け、少しだけ揺らす。
+  // 並び（紐の傾き・1本に吊るす枚数・大きさ）は写真ごとに決まっていて、再読込しても同じ（スクロール位置を戻すため）。
+  var sway = { lines: [], width: 0, raf: 0, last: 0, lastY: 0, vel: 0, gust: null, gustTimer: 0, saveTimer: 0, restoring: false };
+
+  function swayClear() {
+    if (sway.raf) cancelAnimationFrame(sway.raf);
+    sway.raf = 0;
+    sway.last = 0;
+    sway.lines = [];
+    sway.vel = 0;
+    sway.gust = null;
+    clearTimeout(sway.gustTimer);
+    sway.gustTimer = 0;
+    clearTimeout(sway.saveTimer);
+    sway.saveTimer = 0;
+    if (state.developObserver && el.swayList) {
+      Array.prototype.forEach.call(el.swayList.querySelectorAll('.sw-tile:not(.is-developed)'), function (b) {
+        state.developObserver.unobserve(b);
+      });
+    }
+    if (el.swayLines) el.swayLines.textContent = '';
+    if (el.swayList) el.swayList.textContent = '';
+    if (el.swayTags) el.swayTags.textContent = '';
+    if (el.sway) {
+      el.sway.style.height = '';
+      el.sway.removeAttribute('data-moving');
+    }
+  }
+
+  // 画面の幅で決まる大きさ（スマホは1本に1〜2枚、タブレットは2〜4枚、PC は3〜6枚）
+  function swayMetrics(W, vh) {
+    var phone = W < 640, wide = W >= 1000;
+    return {
+      side: Math.max(16, Math.round(W * 0.04)),
+      kMin: phone ? 1 : (wide ? 3 : 2),
+      kMax: phone ? 2 : (wide ? 6 : 4),
+      uMin: phone ? 96 : 140,
+      uMax: phone ? W * 0.52 : clamp(W * 0.2, 200, 320),
+      hMax: Math.max(160, vh * 0.6),
+      top: phone ? 40 : 56
+    };
+  }
+
+  function makeSwayTag(kind, lines, x, ay, w, thread, extra) {
+    var t = document.createElement('div');
+    t.className = 'sw-tag sw-tag-' + kind;
+    t.style.left = Math.round(x - w / 2) + 'px';
+    t.style.top = Math.round(ay) + 'px';
+    t.style.width = w + 'px';
+    var th = document.createElement('span');
+    th.className = 'sw-thread';
+    th.style.height = thread + 'px';
+    var card = document.createElement('span');
+    card.className = 'sw-card';
+    if (extra) card.appendChild(extra);
+    lines.forEach(function (text) {
+      var s = document.createElement('span');
+      s.textContent = text;
+      card.appendChild(s);
+    });
+    t.appendChild(th);
+    t.appendChild(card);
+    return t;
+  }
+
+  function makeSwayItem(p, index, w, h, ax, ay) {
+    var li = document.createElement('li');
+    li.className = 'sw-item';
+    li.style.left = Math.round(ax - w / 2) + 'px';
+    li.style.top = Math.round(ay - SWAY.clip / 2) + 'px';
+    li.style.width = w + 'px';
+    var clipEl = document.createElement('span');
+    clipEl.className = 'sw-clip';
+    clipEl.setAttribute('aria-hidden', 'true');
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sw-tile';
+    b.style.height = h + 'px';
+    b.setAttribute('data-index', String(index));
+    b.setAttribute('data-id', p.id);
+    var img = document.createElement('img');
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.draggable = false;
+    img.width = w;
+    img.height = h;
+    img.alt = p.alt;
+    img.addEventListener('load', function () { markLoaded(b); });
+    img.addEventListener('error', function () { b.classList.add('is-broken'); markLoaded(b); });
+    img.src = p.mid || p.src;
+    watchDevelop(b);
+    var fb = document.createElement('span');
+    fb.className = 'tile-fallback';
+    fb.setAttribute('aria-hidden', 'true');
+    fb.textContent = '表示できません';
+    b.appendChild(img);
+    b.appendChild(fb);
+    li.appendChild(clipEl);
+    li.appendChild(b);
+    return li;
+  }
+
+  function swayBuild(opts) {
+    swayClear();
+    if (!el.sway || !state.list.length) return;
+    // 先に高さを取って縦のスクロールバーが出た状態で幅を測る（PC でスクロールバーの分だけ右が切れないように）
+    el.sway.style.height = Math.round((window.innerHeight || 600) * 2) + 'px';
+    var W = el.sway.clientWidth || document.documentElement.clientWidth || window.innerWidth;
+    var vh = window.innerHeight || 600;
+    var m = swayMetrics(W, vh);
+    var avail = W - m.side * 2;
+    var list = state.list;
+    var slot = SWAY.tagGap + SWAY.tagW + SWAY.itemGap; // 写真1枚ごとに札とすき間が要る幅
+    var ys = state.years;
+    var rangeLines = !ys.length ? [] : (ys.length === 1 ? [String(ys[0])] : [String(ys[ys.length - 1]), '–', String(ys[0])]);
+    var lineFrag = document.createDocumentFragment();
+    var listFrag = document.createDocumentFragment();
+    var tagFrag = document.createDocumentFragment();
+    var prev = null;
+    var next = 0;
+    var height = 0;
+    for (var li = 0; next < list.length; li++) {
+      var key = 'sway-line-' + li;
+      // 紐の傾き: 2〜7度。上下の紐で向きを変えることが多い
+      var sign = (li % 2 ? 1 : -1) * (stable(key, 2) < 0.8 ? 1 : -1);
+      var deg = (2 + stable(key, 1) * 5) * sign;
+      var slope = Math.tan(deg * Math.PI / 180);
+      // 最初の紐には、撮影年の範囲と「Change view」の札を左から吊るす
+      var lead = li === 0 ? [{ kind: 'range', w: SWAY.tagW }, { kind: 'switch', w: SWAY.labelW }] : [];
+      var leadW = lead.reduce(function (sum, t) { return sum + t.w + SWAY.itemGap; }, 0);
+      var k = Math.min(list.length - next, m.kMin + Math.floor(stable(key, 3) * (m.kMax - m.kMin + 1)));
+      var photos, u;
+      for (;;) { // 写真が小さくなりすぎるときは、1本に吊るす枚数を減らす
+        photos = [];
+        var sumF = 0;
+        for (var j = 0; j < k; j++) {
+          var p = list[next + j];
+          var ar = (p.width && p.height) ? p.width / p.height : 1;
+          var f = 0.82 + stable(p.id, 4) * 0.28;
+          photos.push({ p: p, index: next + j, ar: ar, f: f });
+          sumF += f * Math.sqrt(ar);
+        }
+        u = Math.min(m.uMax, (avail - leadW - k * slot) / sumF);
+        if (u >= m.uMin || k <= 1) break;
+        k--;
+      }
+      u = Math.max(u, 40);
+      var used = leadW;
+      photos.forEach(function (ph) {
+        var w = u * ph.f * Math.sqrt(ph.ar), h = u * ph.f / Math.sqrt(ph.ar);
+        if (h > m.hMax) { w *= m.hMax / h; h = m.hMax; }
+        if (w > avail - leadW - slot) { h *= (avail - leadW - slot) / w; w = avail - leadW - slot; }
+        ph.w = Math.max(32, Math.round(w));
+        ph.h = Math.max(32, Math.round(h));
+        used += ph.w + slot;
+      });
+      // 余った幅は、ばらばらのすき間として配る（両端までそろえない）
+      var spare = Math.max(0, avail - used);
+      var nParts = lead.length + photos.length + 1;
+      var weights = [], wsum = 0;
+      for (var q = 0; q < nParts; q++) { weights.push(0.2 + stable(key, 10 + q)); wsum += weights[q]; }
+      var things = [];
+      var x = m.side + spare * weights[0] / wsum;
+      var part = 1;
+      lead.forEach(function (t) {
+        things.push({ kind: t.kind, w: t.w, x: x + t.w / 2, x0: x, x1: x + t.w });
+        x += t.w + SWAY.itemGap + spare * weights[part++] / wsum;
+      });
+      photos.forEach(function (ph) {
+        things.push({ kind: 'photo', ph: ph, x: x + ph.w / 2, x0: x, x1: x + ph.w });
+        var tx = x + ph.w + SWAY.tagGap + SWAY.tagW / 2;
+        things.push({ kind: 'tag', ph: ph, w: SWAY.tagW, x: tx, x0: tx - SWAY.tagW / 2, x1: tx + SWAY.tagW / 2 });
+        x += ph.w + slot + spare * weights[part++] / wsum;
+      });
+      // 札の糸の長さ（写真ごとに少し違う）
+      things.forEach(function (t, n) {
+        t.thread = t.kind === 'photo' ? 0 : Math.round(8 + stable(t.ph ? t.ph.p.id : key + t.kind, 5 + n) * 20);
+        t.drop = t.kind === 'photo' ? SWAY.clip / 2 - 4 + t.ph.h : t.thread + (t.kind === 'switch' ? SWAY.labelH : SWAY.tagH);
+      });
+      // 紐の高さ: 1本目は上に余白を空け、2本目からは前の紐に吊るしたものの下に間を空ける（紐どうしは交差しない）
+      var yMid;
+      if (!prev) {
+        yMid = m.top + Math.abs(slope) * W / 2 + SWAY.clip;
+      } else {
+        yMid = -Infinity;
+        prev.things.forEach(function (t) {
+          var bottom = prev.y(t.x) + t.drop + SWAY.lineGap;
+          var reach = t.kind === 'photo' ? t.ph.h * 0.25 : 8; // 揺れて横へはみ出す分
+          [t.x0 - reach, t.x1 + reach].forEach(function (ex) {
+            yMid = Math.max(yMid, bottom - slope * (ex - W / 2));
+          });
+        });
+        [0, W].forEach(function (ex) { yMid = Math.max(yMid, prev.y(ex) + 48 - slope * (ex - W / 2)); });
+      }
+      var line = {
+        slope: slope, yMid: yMid, things: things, bodies: [], top: Infinity, bottom: -Infinity,
+        y: (function (s, ym) { return function (px) { return ym + s * (px - W / 2); }; })(slope, yMid)
+      };
+      // 紐（画面の端より少し外まで）
+      var lx0 = -40, lx1 = W + 40;
+      var seg = document.createElement('div');
+      seg.className = 'sw-line';
+      seg.style.left = lx0 + 'px';
+      seg.style.top = line.y(lx0).toFixed(1) + 'px';
+      seg.style.width = Math.ceil((lx1 - lx0) / Math.cos(Math.atan(slope))) + 'px';
+      seg.style.transform = 'rotate(' + deg.toFixed(3) + 'deg)';
+      lineFrag.appendChild(seg);
+      things.forEach(function (t) {
+        var ay = line.y(t.x);
+        var node, len, id;
+        if (t.kind === 'photo') {
+          node = makeSwayItem(t.ph.p, t.ph.index, t.ph.w, t.ph.h, t.x, ay);
+          listFrag.appendChild(node);
+          len = t.ph.h * 0.7 + 10;
+          id = t.ph.p.id;
+        } else {
+          var extra = null, lines = [];
+          if (t.kind === 'tag') {
+            var dot = formatDot(t.ph.p.ms);
+            lines = [formatNo(t.ph.p.no), dot.slice(0, 4), dot.slice(5)];
+            id = t.ph.p.id + '-tag';
+          } else if (t.kind === 'range') {
+            lines = rangeLines;
+            id = 'range';
+          } else {
+            extra = document.createElement('button');
+            extra.type = 'button';
+            extra.className = 'sw-label';
+            extra.tabIndex = -1;
+            extra.lang = 'en';
+            extra.textContent = el.patternSwitch ? el.patternSwitch.textContent : 'Change view';
+            id = 'switch';
+          }
+          node = makeSwayTag(t.kind, lines, t.x, ay, t.w, t.thread, extra);
+          tagFrag.appendChild(node);
+          len = t.thread + SWAY.tagH / 2 + 6;
+        }
+        var w0 = 2 * Math.PI / (SWAY.period * Math.sqrt(len / SWAY.lenRef));
+        line.bodies.push({
+          el: node, x: t.x, w0: w0, th: 0, om: 0, shown: 0,
+          dir: (slope >= 0 ? 1 : -1) * (0.6 + stable(id, 6) * 0.8),
+          wind: 0.7 + stable(id, 7) * 0.6
+        });
+        line.top = Math.min(line.top, ay - SWAY.clip);
+        line.bottom = Math.max(line.bottom, ay + t.drop);
+      });
+      height = Math.max(height, line.bottom, line.y(0), line.y(W));
+      sway.lines.push(line);
+      prev = line;
+      next += photos.length;
+    }
+    sway.width = W;
+    el.swayLines.appendChild(lineFrag);
+    el.swayList.setAttribute('aria-label', '写真');
+    el.swayList.appendChild(listFrag);
+    el.swayTags.appendChild(tagFrag);
+    el.sway.style.height = Math.ceil(height + 140) + 'px';
+    sway.lastY = window.pageYOffset || 0;
+    if (opts && opts.restore) swayRestore();
+    else if (opts && opts.ratio) window.scrollTo(0, Math.round(opts.ratio * el.sway.offsetHeight));
+    sway.lastY = window.pageYOffset || 0;
+    swayScheduleGust(2500 + Math.random() * 2500);
+  }
+
+  function swayKick() {
+    if (!sway.raf && sway.lines.length) {
+      el.sway.setAttribute('data-moving', '1');
+      sway.raf = requestAnimationFrame(swayFrame);
+    }
+  }
+
+  // そよ風: 間をあけて、左から右へ通り抜ける
+  function swayScheduleGust(delay) {
+    clearTimeout(sway.gustTimer);
+    sway.gustTimer = setTimeout(function () {
+      sway.gustTimer = 0;
+      if (state.mode !== 'sway' || !sway.lines.length) return;
+      if (state.open || document.visibilityState === 'hidden') { swayScheduleGust(SWAY.gustEvery[0]); return; }
+      sway.gust = { start: performance.now() };
+      swayKick();
+    }, delay !== undefined ? delay : SWAY.gustEvery[0] + Math.random() * (SWAY.gustEvery[1] - SWAY.gustEvery[0]));
+  }
+
+  function swayFrame(now) {
+    sway.raf = 0;
+    var dt = sway.last ? Math.min(48, Math.max(1, now - sway.last)) : 16.67;
+    sway.last = now;
+    var y = window.pageYOffset || 0;
+    var v = state.open ? 0 : (y - sway.lastY) / dt; // スクロールの速さ（px/ms）
+    sway.lastY = y;
+    sway.vel += (v - sway.vel) * Math.min(1, dt / 50);
+    if (Math.abs(sway.vel) < 0.002) sway.vel = 0;
+    var top = el.sway.getBoundingClientRect().top;
+    var vh = window.innerHeight;
+    var lo = -top - 200, hi = -top + vh + 200; // 画面の近くの紐だけ動かす
+    var gx = null;
+    if (sway.gust) {
+      gx = (now - sway.gust.start) * SWAY.gustSpeed - SWAY.gustWidth;
+      if (gx > sway.width + SWAY.gustWidth) {
+        sway.gust = null;
+        gx = null;
+        swayScheduleGust();
+      }
+    }
+    var active = sway.vel !== 0 || gx !== null;
+    var damp = 2 / SWAY.decay;
+    var steps = Math.ceil(dt / 8), h = dt / steps;
+    for (var i = 0; i < sway.lines.length; i++) {
+      var line = sway.lines[i];
+      if (line.bottom < lo || line.top > hi) {
+        // 画面から離れた紐は、揺れを止めてまっすぐに戻しておく（次に見えたときは静かな状態から）
+        if (line.near) {
+          line.near = false;
+          line.bodies.forEach(function (b) { b.th = 0; b.om = 0; if (b.shown) { b.el.style.transform = ''; b.shown = 0; } });
+        }
+        continue;
+      }
+      line.near = true;
+      for (var k = 0; k < line.bodies.length; k++) {
+        var b = line.bodies[k];
+        var w2 = b.w0 * b.w0;
+        var force = SWAY.scroll * sway.vel * b.dir * w2; // 速さに比例して傾く（止まると戻って揺れる）
+        if (gx !== null) {
+          var d = gx - b.x;
+          if (Math.abs(d) < SWAY.gustWidth / 2) force += SWAY.gustTilt * w2 * b.wind * Math.cos(Math.PI * d / SWAY.gustWidth);
+        }
+        for (var s = 0; s < steps; s++) {
+          b.om += (-w2 * b.th - damp * b.om + force) * h;
+          b.th += b.om * h;
+        }
+        if (b.th > SWAY.maxTilt) { b.th = SWAY.maxTilt; b.om = Math.min(0, b.om); }
+        else if (b.th < -SWAY.maxTilt) { b.th = -SWAY.maxTilt; b.om = Math.max(0, b.om); }
+        if (!force && Math.abs(b.th) < 0.0004 && Math.abs(b.om) < 0.00002) { b.th = 0; b.om = 0; }
+        else active = true;
+        var deg = Math.round(b.th * 5729.58) / 100;
+        if (deg !== b.shown) {
+          b.el.style.transform = deg ? 'rotate(' + deg + 'deg)' : '';
+          b.shown = deg;
+        }
+      }
+    }
+    if (active) {
+      sway.raf = requestAnimationFrame(swayFrame);
+    } else {
+      sway.last = 0;
+      el.sway.removeAttribute('data-moving');
+    }
+  }
+
+  window.addEventListener('scroll', function () {
+    if (state.mode !== 'sway' || !sway.lines.length) return;
+    swayKick();
+    if (state.open || sway.restoring) return;
+    clearTimeout(sway.saveTimer);
+    sway.saveTimer = setTimeout(swaySaveNow, SWAY.saveDelay);
+  }, { passive: true });
+
+  window.addEventListener('resize', function () {
+    if (state.mode !== 'sway' || !sway.lines.length) return;
+    var W = el.sway.clientWidth;
+    if (W === sway.width) return; // 高さだけ変わった（スマホのアドレスバーの出し入れ）ときは並べ直さない
+    var ratio = (window.pageYOffset || 0) / Math.max(1, el.sway.offsetHeight);
+    swayBuild({ ratio: ratio });
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (state.mode === 'sway' && document.visibilityState === 'visible' && sway.lines.length && !sway.gustTimer && !sway.gust) swayScheduleGust();
+  });
+
+  function swaySaveNow() {
+    clearTimeout(sway.saveTimer);
+    sway.saveTimer = 0;
+    if (state.mode !== 'sway' || !state.ready || sway.restoring) return;
+    storageSet('sessionStorage', KEYS.sway, JSON.stringify({ v: 1, y: Math.round(window.pageYOffset || 0) }));
+  }
+
+  function swayRestore() {
+    var raw = storageGet('sessionStorage', KEYS.sway);
+    if (!raw) return;
+    var s;
+    try { s = JSON.parse(raw); } catch (e) { storageRemove('sessionStorage', KEYS.sway); return; }
+    if (!s || s.v !== 1 || !(s.y > 0)) return;
+    sway.restoring = true;
+    window.scrollTo(0, s.y);
+    requestAnimationFrame(function () { requestAnimationFrame(function () { sway.restoring = false; }); });
+  }
+
+  function swayFocus(index) {
+    var b = el.swayList ? el.swayList.querySelector('.sw-tile[data-index="' + index + '"]') : null;
+    if (!b) return;
+    b.focus({ preventScroll: true });
+    var r = b.getBoundingClientRect();
+    if (r.top < 0 || r.bottom > window.innerHeight) b.scrollIntoView({ block: 'center' });
+  }
+
+  if (el.sway) {
+    el.sway.addEventListener('click', function (e) {
+      if (state.mode !== 'sway') return;
+      var lb = e.target.closest ? e.target.closest('.sw-label') : null;
+      if (lb) { reopenChooser(); return; } // 札の「Change view」: 見せ方を選び直す
+      var b = e.target.closest ? e.target.closest('.sw-tile') : null;
+      if (b) openViewer(Number(b.getAttribute('data-index')), { from: 'sway' });
+    });
+  }
+
   // ---------------------------------------------------------------- 見せ方の切り替え（パターン・視差効果を減らす設定）
   function wantedMode() {
     if (motionQuery && motionQuery.matches) return 'still';
     if (!state.pattern) return 'choose';
-    return state.pattern === '2' ? 'elastic' : 'drift';
+    return state.pattern === '3' ? 'sway' : (state.pattern === '2' ? 'elastic' : 'drift');
   }
 
   function applyMode() {
@@ -1420,7 +1866,7 @@
     }
     state.mode = mode;
     document.documentElement.setAttribute('data-mode', mode);
-    if (el.patternSwitch) el.patternSwitch.hidden = !(mode === 'drift' || mode === 'elastic');
+    if (el.patternSwitch) el.patternSwitch.hidden = !(mode === 'drift' || mode === 'elastic' || mode === 'sway');
     if (mode === 'choose') openChooser();
     else closeChooser();
     if (!first && state.ready) {
@@ -1464,6 +1910,7 @@
     storageSet('sessionStorage', KEYS.pattern, p);
     storageSet('localStorage', KEYS.patternLast, p);
     storageRemove('sessionStorage', KEYS.elastic); // 選び直したときは最初の位置から
+    storageRemove('sessionStorage', KEYS.sway);
     applyMode();
   }
 
@@ -1486,7 +1933,7 @@
   }
   // 「Change view」: 見せ方を選ぶ画面をもう一度出す
   function reopenChooser() {
-    if (state.mode !== 'drift' && state.mode !== 'elastic') return;
+    if (state.mode !== 'drift' && state.mode !== 'elastic' && state.mode !== 'sway') return;
     saveScrollNow();
     state.pattern = null;
     storageRemove('sessionStorage', KEYS.pattern);
@@ -1551,6 +1998,7 @@
       // キーボードで開いた・別の写真へ送ったときは、その写真が見える所まで動かす
       else if (state.mode === 'drift') driftFocus(state.index, state.viewByKey || state.index !== state.viewOpened);
       else if (state.mode === 'elastic') elasticFocus(state.index);
+      else if (state.mode === 'sway') swayFocus(state.index);
       else focusTile(state.index);
     }
   }

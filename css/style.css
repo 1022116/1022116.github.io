@@ -1,9 +1,11 @@
-/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v13 / 版 13.0）
+/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v14 / 版 14.0）
    S-05: 一覧（v10・v12・v13 で変更）。v13 から年で分けず、全部の写真を新しい順に1つの一覧にする（年のタブ・上部のバーは廃止）
          ・パターン1 散らばる（html[data-mode="drift"]）… 元の縦横比の写真を大小ばらばらに、終わりのない平面へ散らす。
            スクロール・ドラッグで写真ごとに違う速さで動く（動きは app.js、見た目はこのファイルの「動く一覧」）。
            散らし方は読み込むたびに変わる。「Change view」の文字も写真と一緒に散らす
-         ・パターン2 列（html[data-mode="elastic"]）… 4:5 の枠で列に並べ、スクロールすると列ごとに遅れてついてくる
+         ・パターン2 並べる（html[data-mode="elastic"]）… 4:5 の枠で列に並べ、スクロールすると列ごとに遅れてついてくる
+         ・パターン3 揺れる（html[data-mode="sway"]。v14）… 斜めに張った紐に写真と札（番号・撮影日）を吊るし、
+           スクロールの勢いとそよ風で振り子のように揺らす
          ・動かない一覧（html[data-mode="still"]。視差効果を減らす設定のとき）… v9 までのポートフォリオ型一覧
            （正方形をスマホ2列・幅640px以上で3列、番号と撮影日を添える。
            表紙の写真（config.json の coverPhoto、未指定は最新）を先頭に中央へ大きく）
@@ -28,7 +30,7 @@
   font-weight: 400;
   font-display: swap;
   src: url("../fonts/dotgothic16-subset.woff2") format("woff2");
-  unicode-range: U+20-7E,U+2013,U+2026,U+3001-3002,U+300C-300D,U+3041-3096,U+309B-309C,U+30A1-30FC,U+4E00,U+4E26,U+4E2D,U+4EF6,U+4FE1,U+505C,U+50CF,U+518D,U+5199,U+5217,U+52B9,U+52D5,U+5927,U+5C0F,U+5E74,U+5F0F,U+5F62,U+614B,U+6210,U+6563,U+65B0,U+65E5,U+65E7,U+6642,U+66F4,U+6708-6709,U+6790,U+679A,U+6B62-6B63,U+6F02,U+72B6,U+7406,U+751F,U+753B,U+771F,U+78BA,U+793A,U+79FB,U+7BA1,U+8005,U+8868,U+89A7,U+89E3,U+8A8D,U+8AAD,U+8FBC,U+901A,U+9045,U+9078,U+FF01-FF5E;
+  unicode-range: U+20-7E,U+2013,U+2026,U+3001-3002,U+300C-300D,U+3041-3096,U+309B-309C,U+30A1-30FC,U+4E00,U+4E26,U+4E2D,U+4EF6,U+4FE1,U+505C,U+50CF,U+518D,U+5199,U+5217,U+52B9,U+52D5,U+540A,U+5927,U+5C0F,U+5E74,U+5F0F,U+5F62,U+614B,U+6210,U+63FA,U+6563,U+659C,U+65B0,U+65E5,U+65E7,U+6642,U+66F4,U+6708-6709,U+6790,U+679A,U+6B62-6B63,U+6F02,U+72B6,U+7406,U+751F,U+753B,U+771F,U+78BA,U+793A,U+79FB,U+7BA1,U+7D10,U+8005,U+8868,U+89A7,U+89E3,U+8A8D,U+8AAD,U+8FBC,U+901A,U+9045,U+98A8,U+FF01-FF5E;
 }
 
 /* 色: いつも白い背景に黒い文字（スマホのダークモードでも切り替えない） */
@@ -246,7 +248,8 @@ button {
 .tile img,
 .cover-img,
 .drift-tile img,
-.eg-tile img {
+.eg-tile img,
+.sw-tile img {
   clip-path: inset(0); /* ぼかしが写真の外へにじまないように（ボタンは「」の印を外側に出すため切り抜かない） */
   opacity: 0;
   filter: blur(7px) sepia(0.55) brightness(1.18) contrast(0.82);
@@ -256,14 +259,16 @@ button {
 .tile.is-developed img,
 .cover-btn.is-developed .cover-img,
 .drift-tile.is-developed img,
-.eg-tile.is-developed img {
+.eg-tile.is-developed img,
+.sw-tile.is-developed img {
   opacity: 1;
   filter: none;
 }
 @media (hover: hover) {
   .tile.is-developed:hover img,
   .drift-tile.is-developed:hover img,
-  .eg-tile.is-developed:hover img { opacity: 0.88; transition-duration: 0.25s; transition-delay: 0s; }
+  .eg-tile.is-developed:hover img,
+  .sw-tile.is-developed:hover img { opacity: 0.88; transition-duration: 0.25s; transition-delay: 0s; }
   .cover-btn.is-developed:hover .cover-img { opacity: 0.92; transition-duration: 0.25s; transition-delay: 0s; }
 }
 
@@ -300,7 +305,8 @@ button {
 .tile.is-broken img { visibility: hidden; }
 .tile.is-broken .tile-fallback,
 .drift-tile.is-broken .tile-fallback,
-.eg-tile.is-broken .tile-fallback { display: flex; }
+.eg-tile.is-broken .tile-fallback,
+.sw-tile.is-broken .tile-fallback { display: flex; }
 
 .grid-sentinel { height: 1px; }
 .grid-sentinel[hidden] { display: none; }
@@ -556,17 +562,17 @@ html[data-mode="drift"] .site-meta > span:not(:empty) {
 
 /* ---- 選んだものの印「」（v11。キーボードの Tab や、全画面表示を閉じたときに戻る場所） ------------------
    青い枠の代わりに、左上と右下に黒いかぎ（「 」）を付ける。写真は外側に大きめ、文字やボタンは小さめ */
-:is(.tile, .cover-btn, .drift-tile, .eg-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch) {
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .sw-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch) {
   --mark-size: 9px;
   --mark-gap: -2px;
   position: relative;
 }
-:is(.tile, .cover-btn, .drift-tile, .eg-tile) {
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .sw-tile) {
   --mark-size: 16px;
   --mark-gap: -8px;
 }
-:is(.tile, .cover-btn, .drift-tile, .eg-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::before,
-:is(.tile, .cover-btn, .drift-tile, .eg-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::after {
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .sw-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::before,
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .sw-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::after {
   content: "";
   position: absolute;
   z-index: 1;
@@ -577,21 +583,21 @@ html[data-mode="drift"] .site-meta > span:not(:empty) {
   pointer-events: none;
   transition: opacity 0.15s ease;
 }
-:is(.tile, .cover-btn, .drift-tile, .eg-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::before {
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .sw-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::before {
   top: var(--mark-gap);
   left: var(--mark-gap);
   border-top-width: 1.5px;
   border-left-width: 1.5px;
 }
-:is(.tile, .cover-btn, .drift-tile, .eg-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::after {
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .sw-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch)::after {
   right: var(--mark-gap);
   bottom: var(--mark-gap);
   border-right-width: 1.5px;
   border-bottom-width: 1.5px;
 }
 :focus-visible { outline: none; }
-:is(.tile, .cover-btn, .drift-tile, .eg-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch):focus-visible::before,
-:is(.tile, .cover-btn, .drift-tile, .eg-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch):focus-visible::after { opacity: 1; }
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .sw-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch):focus-visible::before,
+:is(.tile, .cover-btn, .drift-tile, .eg-tile, .sw-tile, .drift-label, .viewer-btn, .status-retry, .chooser-opt, .pattern-switch):focus-visible::after { opacity: 1; }
 .viewer:focus,
 .viewer:focus-visible,
 .chooser:focus,
@@ -800,6 +806,160 @@ html[data-mode="elastic"] .site-meta {
 /* 列が細くて1行に収まらないときは「No. 47」と「2026.10.11」の2行（app.js の elasticFitCaptions が付ける） */
 .eg-grid.is-stacked .eg-sep { display: none; }
 .eg-grid.is-stacked .eg-date { display: block; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- パターン3: 揺れる（v14） ------------------------------------------------------------
+   暗室で現像した写真を干すように、斜めに張った紐に写真をクリップで吊るし、横に札（番号・年・月日）を下げる。
+   紐・写真・札の位置と揺れ（transform: rotate）は app.js が決める。ページは普通に縦へスクロールする */
+.sway { display: none; }
+html[data-mode="sway"] .cover,
+html[data-mode="sway"] .grid,
+html[data-mode="sway"] .grid-sentinel,
+html[data-mode="sway"] .drift,
+html[data-mode="sway"] .elastic { display: none; }
+html[data-mode="sway"] .grid-panel {
+  max-width: none;
+  padding: 0;
+}
+html[data-mode="sway"] .sway {
+  display: block;
+  position: relative;
+  overflow: hidden;
+}
+/* 撮影年の範囲と Change view は最初の紐に札として吊るす。キーボード用の Change view ボタンは、
+   パターン1と同じく右下に重ね、キーボードで移ったときだけ見せる */
+html[data-mode="sway"] .site-meta {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  justify-content: flex-start;
+  max-width: none;
+  padding: 0 max(var(--side), env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(var(--side), env(safe-area-inset-left));
+  pointer-events: none;
+}
+html[data-mode="sway"] .site-meta .site-range { display: none; }
+html[data-mode="sway"] .site-meta .app-count:not(:empty) {
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.92);
+}
+html[data-mode="sway"] .site-meta .pattern-switch {
+  margin-left: auto;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.92);
+  opacity: 0;
+  pointer-events: none;
+}
+html[data-mode="sway"] .site-meta .pattern-switch:focus {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sway-lines,
+.sway-tags {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sway-list {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+/* 紐: 細い黒い線（左端を起点に傾ける） */
+.sw-line {
+  position: absolute;
+  height: 0;
+  border-top: 1px solid var(--ink);
+  transform-origin: 0 0;
+}
+/* 写真: 上の真ん中のクリップ（紐が真ん中を通る）を軸に揺れる */
+.sw-item {
+  position: absolute;
+  margin: 0;
+  transform-origin: 50% 7px;
+  will-change: transform;
+  pointer-events: auto;
+}
+.sw-clip {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 12px;
+  height: 14px;
+  margin: 0 auto -4px;
+  border-radius: 2px;
+  background: #2a2a2a;
+  box-shadow: inset 0 -4px 0 #555555;
+}
+.sw-tile {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--tile);
+  cursor: zoom-in;
+}
+.sw-tile img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  -webkit-user-drag: none;
+}
+.sw-tile.is-broken img { visibility: hidden; }
+/* 札: 紐から糸で下げた小さな紙。番号・年・月日の3行 */
+.sw-tag {
+  position: absolute;
+  transform-origin: 50% 0;
+  will-change: transform;
+}
+.sw-thread {
+  display: block;
+  width: 1px;
+  margin: 0 auto;
+  background: var(--ink);
+}
+.sw-card {
+  display: block;
+  padding: 4px 2px;
+  border: 1px solid var(--ink);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--latin);
+  font-size: 10px;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+.sw-card > span { display: block; white-space: nowrap; }
+.sw-label {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.35;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+@media (hover: hover) {
+  .sw-label:hover { opacity: 0.55; }
+}
 
 /* ---- 広い画面 ------------------------------------------------------------- */
 /* 横向きのスマホ（幅 640px 以上）から3列。2列だと1枚が画面の高さを超えるため */

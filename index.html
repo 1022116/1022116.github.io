@@ -7,7 +7,7 @@
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#ffffff">
-  <meta name="pv-spec" content="PV-SPEC-2026-10-v13 13.0">
+  <meta name="pv-spec" content="PV-SPEC-2026-10-v14 14.0">
   <title>写真</title>
   <link rel="preload" href="fonts/dotgothic16-subset.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
@@ -49,8 +49,15 @@
         <div class="drift-copies" id="drift-copies" aria-hidden="true"></div>
         <div class="drift-labels" id="drift-labels" aria-hidden="true"></div>
       </div>
-      <!-- パターン2（v12）: 写真を列に並べ、スクロールすると列ごとに遅れてついてくる。列は app.js が作る -->
+      <!-- パターン2「並べる」（v12）: 写真を列に並べ、スクロールすると列ごとに遅れてついてくる。列は app.js が作る -->
       <div class="elastic" id="elastic"></div>
+      <!-- パターン3「揺れる」（v14）: 斜めに張った紐に写真と札（番号・日付）を吊るし、スクロールの勢いとそよ風で揺らす。
+           紐と札は飾り（札の番号・日付は写真の代替テキストと同じ内容）なので読み上げない -->
+      <div class="sway" id="sway">
+        <div class="sway-lines" id="sway-lines" aria-hidden="true"></div>
+        <ul class="sway-list" id="sway-list"></ul>
+        <div class="sway-tags" id="sway-tags" aria-hidden="true"></div>
+      </div>
     </section>
   </main>
 
@@ -78,8 +85,20 @@
               <rect x="28" y="2" width="16" height="18"/><rect x="28" y="24" width="16" height="18"/>
               <rect x="52" y="8" width="16" height="18"/><rect x="52" y="30" width="16" height="18"/>
             </svg>
-            <span class="chooser-name">列</span>
+            <span class="chooser-name">並べる</span>
             <span class="chooser-note" id="chooser-note-2">写真が列に並び、列ごとに遅れてついてくる</span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="chooser-opt" data-pattern="3" aria-describedby="chooser-note-3">
+            <span class="chooser-no" aria-hidden="true">3</span>
+            <svg class="chooser-fig" viewBox="0 0 72 48" width="72" height="48" aria-hidden="true" focusable="false">
+              <path d="M1 6L71 12M1 30L71 24"/>
+              <rect x="9" y="8" width="12" height="15"/><rect x="31" y="9" width="17" height="11"/><rect x="56" y="11" width="10" height="13"/>
+              <rect x="12" y="29" width="16" height="11"/><rect x="40" y="27" width="11" height="16"/>
+            </svg>
+            <span class="chooser-name">揺れる</span>
+            <span class="chooser-note" id="chooser-note-3">写真が斜めの紐に吊るされ、スクロールや風で揺れる</span>
           </button>
         </li>
       </ul>
