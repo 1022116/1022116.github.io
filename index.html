@@ -7,7 +7,7 @@
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#ffffff">
-  <meta name="pv-spec" content="PV-SPEC-2026-10-v14 14.0">
+  <meta name="pv-spec" content="PV-SPEC-2026-10-v16 16.0">
   <title>写真</title>
   <link rel="preload" href="fonts/dotgothic16-subset.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
@@ -51,10 +51,12 @@
       </div>
       <!-- パターン2「並べる」（v12）: 写真を列に並べ、スクロールすると列ごとに遅れてついてくる。列は app.js が作る -->
       <div class="elastic" id="elastic"></div>
-      <!-- パターン3「揺れる」（v14）: 斜めに張った紐に写真と札（番号・日付）を吊るし、スクロールの勢いとそよ風で揺らす。
-           紐と札は飾り（札の番号・日付は写真の代替テキストと同じ内容）なので読み上げない -->
+      <!-- パターン3「揺れる」（v14〜v16）: 撮影日ごとに1本の斜めの紐を張り、写真と日付の札を吊るして（番号の札は v16 で廃止）、
+           スクロール・スライドの勢いとそよ風で揺らす。画面に収まらない日の紐は左右にスライドできる（sway-bands が受け持つ）。
+           紐と札は飾り（札の日付は写真の代替テキストと同じ内容）なので読み上げない -->
       <div class="sway" id="sway">
         <div class="sway-lines" id="sway-lines" aria-hidden="true"></div>
+        <div class="sway-bands" id="sway-bands" aria-hidden="true"></div>
         <ul class="sway-list" id="sway-list"></ul>
         <div class="sway-tags" id="sway-tags" aria-hidden="true"></div>
       </div>

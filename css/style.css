@@ -1,11 +1,12 @@
-/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v14 / 版 14.0）
+/* 写真ビューア（同期仕様ID PV-SPEC-2026-10-v16 / 版 16.0）
    S-05: 一覧（v10・v12・v13 で変更）。v13 から年で分けず、全部の写真を新しい順に1つの一覧にする（年のタブ・上部のバーは廃止）
          ・パターン1 散らばる（html[data-mode="drift"]）… 元の縦横比の写真を大小ばらばらに、終わりのない平面へ散らす。
            スクロール・ドラッグで写真ごとに違う速さで動く（動きは app.js、見た目はこのファイルの「動く一覧」）。
            散らし方は読み込むたびに変わる。「Change view」の文字も写真と一緒に散らす
          ・パターン2 並べる（html[data-mode="elastic"]）… 4:5 の枠で列に並べ、スクロールすると列ごとに遅れてついてくる
-         ・パターン3 揺れる（html[data-mode="sway"]。v14）… 斜めに張った紐に写真と札（番号・撮影日）を吊るし、
-           スクロールの勢いとそよ風で振り子のように揺らす
+         ・パターン3 揺れる（html[data-mode="sway"]。v14・v15）… 撮影日ごとに1本の斜めの紐を張って写真と札（日付・番号）を吊るし、
+           スクロール・スライドの勢いとそよ風で振り子のように揺らす。画面に収まらない日の紐は左右にスライドできる
+           （v16: 写真の横の番号の札は廃止）
          ・動かない一覧（html[data-mode="still"]。視差効果を減らす設定のとき）… v9 までのポートフォリオ型一覧
            （正方形をスマホ2列・幅640px以上で3列、番号と撮影日を添える。
            表紙の写真（config.json の coverPhoto、未指定は最新）を先頭に中央へ大きく）
@@ -807,9 +808,9 @@ html[data-mode="elastic"] .site-meta {
 .eg-grid.is-stacked .eg-sep { display: none; }
 .eg-grid.is-stacked .eg-date { display: block; overflow: hidden; text-overflow: ellipsis; }
 
-/* ---- パターン3: 揺れる（v14） ------------------------------------------------------------
-   暗室で現像した写真を干すように、斜めに張った紐に写真をクリップで吊るし、横に札（番号・年・月日）を下げる。
-   紐・写真・札の位置と揺れ（transform: rotate）は app.js が決める。ページは普通に縦へスクロールする */
+/* ---- パターン3: 揺れる（v14・v15） ------------------------------------------------------------
+   暗室で現像した写真を干すように、撮影日ごとに1本の斜めの紐に写真をクリップで吊るし、紐の左端に日付の札を下げる。紐・写真・札の位置、紐に沿ったスライドと揺れ（transform）は app.js が決める。
+   ページは普通に縦へスクロールし、画面に収まらない日の紐は左右にスライドできる */
 .sway { display: none; }
 html[data-mode="sway"] .cover,
 html[data-mode="sway"] .grid,
@@ -824,6 +825,13 @@ html[data-mode="sway"] .sway {
   display: block;
   position: relative;
   overflow: hidden;
+  overflow: clip; /* 画面の外へ続く紐の写真を切る。フォーカスなどで中身が横へスクロールしないように */
+}
+.sway.is-dragging,
+.sway.is-dragging * { cursor: grabbing; }
+.sway.is-dragging {
+  -webkit-user-select: none;
+  user-select: none;
 }
 /* 撮影年の範囲と Change view は最初の紐に札として吊るす。キーボード用の Change view ボタンは、
    パターン1と同じく右下に重ね、キーボードで移ったときだけ見せる */
@@ -861,6 +869,18 @@ html[data-mode="sway"] .site-meta .pattern-switch:focus {
   inset: 0;
   pointer-events: none;
 }
+/* 紐の帯: 写真のないところでも、紐を左右にスライドできるように（縦の動きはページのスクロールに任せる） */
+.sway-bands {
+  position: absolute;
+  inset: 0;
+}
+.sw-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  touch-action: pan-y pinch-zoom;
+}
+.sw-band.is-slidable { cursor: grab; }
 .sway-list {
   position: absolute;
   inset: 0;
@@ -883,6 +903,7 @@ html[data-mode="sway"] .site-meta .pattern-switch:focus {
   transform-origin: 50% 7px;
   will-change: transform;
   pointer-events: auto;
+  touch-action: pan-y pinch-zoom;
 }
 .sw-clip {
   position: relative;
@@ -914,9 +935,10 @@ html[data-mode="sway"] .site-meta .pattern-switch:focus {
   height: 100%;
   object-fit: cover;
   -webkit-user-drag: none;
+  pointer-events: none;
 }
 .sw-tile.is-broken img { visibility: hidden; }
-/* 札: 紐から糸で下げた小さな紙。番号・年・月日の3行 */
+/* 札: 紐から糸で下げた小さな紙。紐の左端に日付（年・月日の2行）。写真の横の番号の札は v16 で廃止 */
 .sw-tag {
   position: absolute;
   transform-origin: 50% 0;
