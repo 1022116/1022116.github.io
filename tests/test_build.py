@@ -1410,6 +1410,8 @@ TOKEN = "gc-secret-token-0123456789abcdef"
 
 
 def write_config(project: Path, **kw) -> None:
+    """試験用プロジェクトの config.json を書く。build / validate は --root のものを読む
+    （相対の --config はカレントから探すので、本物のプロジェクトで試験すると本物の config.json を読んでしまう）。"""
     cfg = json.loads((project / "config.example.json").read_text(encoding="utf-8"))
     cfg.update(kw)
     (project / "config.json").write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
@@ -1420,29 +1422,29 @@ class TestAnalyticsV18:
     def test_code_becomes_the_count_endpoint(self, project, value):
         make_image(src(project) / "a.jpg", exif_dt="2026:01:01 10:00:00")
         write_config(project, goatcounter=value, goatcounterToken=TOKEN)
-        build_ok(project, "--config", "config.json")
+        build_ok(project)
         doc = load_photos(project)
         assert doc["analytics"] == {"goatcounter": "https://daily-photos.goatcounter.com/count"}
-        assert run_validate(project, "--config", "config.json").returncode == 0
+        assert run_validate(project).returncode == 0
 
     def test_no_code_means_no_counting(self, project):
         make_image(src(project) / "a.jpg", exif_dt="2026:01:01 10:00:00")
         write_config(project)
-        build_ok(project, "--config", "config.json")
+        build_ok(project)
         assert "analytics" not in load_photos(project)
 
     @pytest.mark.parametrize("value", ["Daily Photos", "-abc", "abc_def", 123, "https://example.com/count"])
     def test_bad_code_stops_the_build(self, project, value):
         make_image(src(project) / "a.jpg", exif_dt="2026:01:01 10:00:00")
         write_config(project, goatcounter=value)
-        r = run_build(project, "--config", "config.json")
+        r = run_build(project)
         assert r.returncode == 1 and "goatcounter" in r.stdout, r.stdout
 
     def test_api_key_never_reaches_public_files(self, project):
         make_image(src(project) / "a.jpg", exif_dt="2026:01:01 10:00:00")
         make_image(src(project) / "b.jpg", exif_dt="2026:01:02 10:00:00")
         write_config(project, goatcounter="daily-photos", goatcounterToken=TOKEN)
-        build_ok(project, "--config", "config.json")
+        build_ok(project)
         for d in ("data", "photos", "thumbs", "mids", "js", "css", "fonts"):
             for f in (project / d).rglob("*"):
                 if f.is_file():
@@ -1452,7 +1454,7 @@ class TestAnalyticsV18:
         doc = load_photos(project)
         doc["note"] = TOKEN
         write_json(project, doc)
-        r = run_validate(project, "--config", "config.json")
+        r = run_validate(project)
         assert r.returncode == 1 and "API キー" in r.stdout
 
     @pytest.mark.parametrize("an", [
@@ -1472,10 +1474,10 @@ class TestAnalyticsV18:
     def test_settings_change_does_not_reconvert_images(self, project):
         make_image(src(project) / "a.jpg", exif_dt="2026:01:01 10:00:00")
         write_config(project)
-        build_ok(project, "--config", "config.json")
+        build_ok(project)
         before = {k: v for k, v in output_snapshot(project).items() if not k.startswith("data/")}
         write_config(project, goatcounter="daily-photos", goatcounterToken=TOKEN)
-        r = build_ok(project, "--config", "config.json")
+        r = build_ok(project)
         assert "新規変換 0" in r.stdout
         assert {k: v for k, v in output_snapshot(project).items() if not k.startswith("data/")} == before
 
