@@ -4,7 +4,7 @@
   "schemaVersion": 3,
   "title": "Daily",
   "timezone": "Asia/Tokyo",
-  "count": 219,
+  "count": 216,
   "years": [
     2026,
     2025
@@ -117,18 +117,6 @@
       "width": 1280,
       "height": 1920,
       "alt": "2026年10月17日 13:59 撮影の写真",
-      "dateSource": "exif"
-    },
-    {
-      "id": "8595765d5a6a021e",
-      "src": "photos/2026/8595765d5a6a021e.webp",
-      "thumb": "thumbs/2026/8595765d5a6a021e.webp",
-      "mid": "mids/2026/8595765d5a6a021e.webp",
-      "date": "2026-10-17T13:57:22+09:00",
-      "year": 2026,
-      "width": 1280,
-      "height": 1920,
-      "alt": "2026年10月17日 13:57 撮影の写真",
       "dateSource": "exif"
     },
     {
@@ -1272,34 +1260,10 @@
       "dateSource": "exif"
     },
     {
-      "id": "6dd3721dd062f84b",
-      "src": "photos/2026/6dd3721dd062f84b.webp",
-      "thumb": "thumbs/2026/6dd3721dd062f84b.webp",
-      "mid": "mids/2026/6dd3721dd062f84b.webp",
-      "date": "2026-04-12T15:39:06+09:00",
-      "year": 2026,
-      "width": 1280,
-      "height": 1920,
-      "alt": "2026年4月12日 15:39 撮影の写真",
-      "dateSource": "exif"
-    },
-    {
       "id": "0329a805cabd2c46",
       "src": "photos/2026/0329a805cabd2c46.webp",
       "thumb": "thumbs/2026/0329a805cabd2c46.webp",
       "mid": "mids/2026/0329a805cabd2c46.webp",
-      "date": "2026-04-12T15:38:51+09:00",
-      "year": 2026,
-      "width": 1920,
-      "height": 1280,
-      "alt": "2026年4月12日 15:38 撮影の写真",
-      "dateSource": "exif"
-    },
-    {
-      "id": "04626de34d3df0ef",
-      "src": "photos/2026/04626de34d3df0ef.webp",
-      "thumb": "thumbs/2026/04626de34d3df0ef.webp",
-      "mid": "mids/2026/04626de34d3df0ef.webp",
       "date": "2026-04-12T15:38:51+09:00",
       "year": 2026,
       "width": 1920,
