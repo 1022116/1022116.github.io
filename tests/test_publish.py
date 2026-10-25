@@ -1,4 +1,4 @@
-"""publish.ps1 の試験（同期仕様ID PV-SPEC-2026-10-v17 / 版 17.0）
+"""publish.ps1 の試験（同期仕様ID PV-SPEC-2026-10-v18 / 版 18.0）
 
 一時ディレクトリに Git リポジトリとベアリポジトリ（origin の代わり）を作り、
 ロック → 仮想環境確認 → build → validate → pytest → Git 安全確認 → commit/push の流れと停止条件を確認する。
@@ -303,3 +303,33 @@ def test_publish_log_shows_tests_passed_before_push(repo):
     logs = sorted((repo / "logs").glob("publish_*.log"))
     text = logs[-1].read_text(encoding="utf-8")
     assert text.index("6/8 試験に合格しました") < text.index("8/8 push しました")
+
+
+# 仕様 v18: 公開の最後に、PC の中だけで見るダッシュボードを作り直す（作れなくても公開の結果は変えない。公開はしない）
+def test_publish_updates_the_dashboard_but_never_commits_it(repo):
+    (repo / "config.json").write_text(json.dumps({"goatcounter": "daily-photos"}), encoding="utf-8")
+    r = run_publish(repo)
+    assert r.returncode == 0, out(r)
+    page = repo / "dashboard" / "index.html"
+    assert page.is_file() and "ダッシュボードを更新しました" in r.stdout
+    html = page.read_text(encoding="utf-8")
+    assert "公開しました" in html and "API キーがまだありません" in html  # 今回の公開の結果も入る
+    assert git(repo, "check-ignore", "-q", "dashboard/index.html", check=False).returncode == 0
+    tracked = git(repo, "ls-files").stdout.split()
+    assert not [f for f in tracked if f.startswith("dashboard/")]
+    assert json.loads((repo / "data" / "photos.json").read_text(encoding="utf-8"))["analytics"] == {
+        "goatcounter": "https://daily-photos.goatcounter.com/count"
+    }
+
+
+def test_dashboard_failure_does_not_change_the_publish_result(repo):
+    (repo / "tools" / "make_dashboard.py").write_text("import sys\nprint('broken')\nsys.exit(1)\n", encoding="utf-8")
+    r = run_publish(repo)
+    assert r.returncode == 0, out(r)
+    assert "8/8 push しました" in r.stdout and "ダッシュボードを更新できませんでした" in r.stdout
+
+
+def test_dry_run_does_not_make_the_dashboard(repo):
+    r = run_publish(repo, "-DryRun")
+    assert r.returncode == 0, out(r)
+    assert not (repo / "dashboard").exists()

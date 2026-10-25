@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy-Item config.example.json config.json でコピーして使います。config.json は Git の対象外です（PC内のパスを公開しないため）。thumbSize と detailMaxEdge は仕様固定値（480 / 1920）で、変更すると生成・検証がエラーになります。 coverPhoto にトップに大きく表示する写真のファイル名（source_photos からの位置。例: \"2026/IMG_0001.jpeg\"）を書くと表紙になります。空ならいちばん新しい写真。",
+  "_comment": "Copy-Item config.example.json config.json でコピーして使います。config.json は Git の対象外です（PC内のパスを公開しないため）。thumbSize と detailMaxEdge は仕様固定値（480 / 1920）で、変更すると生成・検証がエラーになります。 coverPhoto にトップに大きく表示する写真のファイル名（source_photos からの位置。例: \"2026/IMG_0001.jpeg\"）を書くと表紙になります。空ならいちばん新しい写真。 goatcounter に GoatCounter のコード（https://<コード>.goatcounter.com の <コード>）を書くとアクセス数を数えます（v18）。goatcounterToken には GoatCounter の API キー（権限 Read statistics だけ）を書くと、ダッシュボードにアクセス数が出ます。キーは公開データには書かれませんが、人に見せないでください。",
   "sourceDir": "source_photos",
   "allowedExtensions": [
     ".jpg",
@@ -16,5 +16,7 @@
   "thumbQuality": 80,
   "detailQuality": 85,
   "shrinkGuardRatio": 0.5,
-  "jobs": 0
+  "jobs": 0,
+  "goatcounter": "",
+  "goatcounterToken": ""
 }

@@ -1,4 +1,4 @@
-"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v17 / 版 17.0）
+"""生成・検証の試験（同期仕様ID PV-SPEC-2026-10-v18 / 版 18.0）
 
 試験画像を一時ディレクトリに生成し、build → JSON → 検証 → 再生成までの状態遷移とファイル更新を確認する。
 分類: 正常 / 境界 / 異常 / 競合 / 移行 / 回帰
@@ -186,7 +186,7 @@ class TestNormal:
         raw = (project / "data" / "photos.json").read_bytes()
         assert not raw.startswith(b"\xef\xbb\xbf") and b"\r\n" not in raw
         doc = json.loads(raw.decode("utf-8"))
-        assert doc["specId"] == "PV-SPEC-2026-10-v17" and doc["specVersion"] == "17.0"
+        assert doc["specId"] == "PV-SPEC-2026-10-v18" and doc["specVersion"] == "18.0"
         assert doc["count"] == 1 and doc["years"] == [2025] and doc["timezone"] == "Asia/Tokyo"
         e = doc["photos"][0]
         assert set(e) == set(C.REQUIRED_KEYS) | {"mid"}  # mid: 動く一覧の中間画像（仕様 v10）
@@ -841,12 +841,12 @@ class TestRegression:
     def test_spec_id_and_version_are_in_sync(self):
         files = ["README.md", "index.html", "js/app.js", "css/style.css", "tools/build_gallery.py",
                  "tools/validate_build.py", "tools/publish.ps1", "tools/publish.bat", "tools/pv_common.py",
-                 "tests/test_build.py"]
+                 "tools/make_dashboard.py", "tools/dashboard.bat", "tests/test_build.py", "tests/test_dashboard.py"]
         for rel in files:
             text = (PROJECT_ROOT / rel).read_text(encoding="utf-8-sig")
-            assert "PV-SPEC-2026-10-v17" in text, rel
-            assert "17.0" in text, rel
-        assert C.SPEC_ID == "PV-SPEC-2026-10-v17" and C.SPEC_VERSION == "17.0"
+            assert "PV-SPEC-2026-10-v18" in text, rel
+            assert "18.0" in text, rel
+        assert C.SPEC_ID == "PV-SPEC-2026-10-v18" and C.SPEC_VERSION == "18.0"
         assert json.loads((PROJECT_ROOT / "data" / "photos.json").read_text(encoding="utf-8"))["specId"] == C.SPEC_ID
 
     def test_test_temp_folder_is_outside_the_project(self, tmp_path_factory):
@@ -961,7 +961,7 @@ class TestGuideSync:
     def test_readme_uses_the_guide_commands(self):
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
         for cmd in (
-            "PV-SPEC-2026-10-v17 / version 17.0",
+            "PV-SPEC-2026-10-v18 / version 18.0",
             "Python 3.11",
             "python -m venv .venv",
             r".\.venv\Scripts\Activate.ps1",
@@ -1087,7 +1087,7 @@ class TestFilenameDate:
         assert any("同期仕様ID" in e for e in V.validate(project).errors)
         build_ok(project)
         doc = load_photos(project)
-        assert doc["specId"] == "PV-SPEC-2026-10-v17" and doc["photos"][0]["dateSource"] == "filename"
+        assert doc["specId"] == "PV-SPEC-2026-10-v18" and doc["photos"][0]["dateSource"] == "filename"
         assert run_validate(project).returncode == 0
 
 
@@ -1401,3 +1401,88 @@ class TestMidImages:
     def test_publish_script_includes_mids(self):
         text = (PROJECT_ROOT / "tools" / "publish.ps1").read_text(encoding="utf-8-sig")
         assert "'mids'" in text and "$f -like 'mids/*'" in text
+
+
+# ===========================================================================
+# 仕様 v18: アクセス解析（GoatCounter）。config.json のコードから受付先を photos.json に書く。API キーは公開しない
+# ===========================================================================
+TOKEN = "gc-secret-token-0123456789abcdef"
+
+
+def write_config(project: Path, **kw) -> None:
+    cfg = json.loads((project / "config.example.json").read_text(encoding="utf-8"))
+    cfg.update(kw)
+    (project / "config.json").write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+
+class TestAnalyticsV18:
+    @pytest.mark.parametrize("value", ["daily-photos", "https://daily-photos.goatcounter.com", "https://Daily-Photos.goatcounter.com/count", " daily-photos "])
+    def test_code_becomes_the_count_endpoint(self, project, value):
+        make_image(src(project) / "a.jpg", exif_dt="2026:01:01 10:00:00")
+        write_config(project, goatcounter=value, goatcounterToken=TOKEN)
+        build_ok(project, "--config", "config.json")
+        doc = load_photos(project)
+        assert doc["analytics"] == {"goatcounter": "https://daily-photos.goatcounter.com/count"}
+        assert run_validate(project, "--config", "config.json").returncode == 0
+
+    def test_no_code_means_no_counting(self, project):
+        make_image(src(project) / "a.jpg", exif_dt="2026:01:01 10:00:00")
+        write_config(project)
+        build_ok(project, "--config", "config.json")
+        assert "analytics" not in load_photos(project)
+
+    @pytest.mark.parametrize("value", ["Daily Photos", "-abc", "abc_def", 123, "https://example.com/count"])
+    def test_bad_code_stops_the_build(self, project, value):
+        make_image(src(project) / "a.jpg", exif_dt="2026:01:01 10:00:00")
+        write_config(project, goatcounter=value)
+        r = run_build(project, "--config", "config.json")
+        assert r.returncode == 1 and "goatcounter" in r.stdout, r.stdout
+
+    def test_api_key_never_reaches_public_files(self, project):
+        make_image(src(project) / "a.jpg", exif_dt="2026:01:01 10:00:00")
+        make_image(src(project) / "b.jpg", exif_dt="2026:01:02 10:00:00")
+        write_config(project, goatcounter="daily-photos", goatcounterToken=TOKEN)
+        build_ok(project, "--config", "config.json")
+        for d in ("data", "photos", "thumbs", "mids", "js", "css", "fonts"):
+            for f in (project / d).rglob("*"):
+                if f.is_file():
+                    assert TOKEN.encode() not in f.read_bytes(), f
+        assert TOKEN not in (project / "index.html").read_text(encoding="utf-8")
+        # 万一 photos.json に入っていたら、検証で止まる
+        doc = load_photos(project)
+        doc["note"] = TOKEN
+        write_json(project, doc)
+        r = run_validate(project, "--config", "config.json")
+        assert r.returncode == 1 and "API キー" in r.stdout
+
+    @pytest.mark.parametrize("an", [
+        {"goatcounter": "https://evil.example.com/count"},
+        {"goatcounter": "http://daily.goatcounter.com/count"},
+        {"goatcounter": "https://daily.goatcounter.com/count", "token": "x"},
+        "https://daily.goatcounter.com/count",
+    ])
+    def test_validator_rejects_other_analytics(self, project, an):
+        make_image(src(project) / "a.jpg", exif_dt="2026:01:01 10:00:00")
+        build_ok(project)
+        doc = load_photos(project)
+        doc["analytics"] = an
+        write_json(project, doc)
+        assert any("analytics" in e for e in validate_errors(project))
+
+    def test_settings_change_does_not_reconvert_images(self, project):
+        make_image(src(project) / "a.jpg", exif_dt="2026:01:01 10:00:00")
+        write_config(project)
+        build_ok(project, "--config", "config.json")
+        before = {k: v for k, v in output_snapshot(project).items() if not k.startswith("data/")}
+        write_config(project, goatcounter="daily-photos", goatcounterToken=TOKEN)
+        r = build_ok(project, "--config", "config.json")
+        assert "新規変換 0" in r.stdout
+        assert {k: v for k, v in output_snapshot(project).items() if not k.startswith("data/")} == before
+
+    def test_dashboard_folder_is_never_published(self):
+        ignore = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8")
+        assert re.search(r"^dashboard/$", ignore, re.M)
+        ps1 = (PROJECT_ROOT / "tools" / "publish.ps1").read_text(encoding="utf-8-sig")
+        published = re.search(r"\$PublishPaths = @\(([^)]*)\)", ps1).group(1)
+        assert "dashboard" not in published and "config" not in published and "logs" not in published
+        assert "Update-Dashboard" in ps1

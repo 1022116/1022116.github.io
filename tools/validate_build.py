@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""公開出力一式の動的整合性検証（同期仕様ID PV-SPEC-2026-10-v17 / 版 17.0）
+"""公開出力一式の動的整合性検証（同期仕様ID PV-SPEC-2026-10-v18 / 版 18.0）
 
 検証内容:
   JSON構文（UTF-8・BOMなし）/ 同期仕様ID / 必須キーと型 / 旧fiscalYearの混入 /
@@ -326,6 +326,14 @@ def validate(
             if s1 > s2:
                 res.error(f"同日時の並びが相対パス昇順ではありません: photos[{i1}] と photos[{i2}]（S-02）")
 
+    # --- アクセス解析（v18） ---------------------------------------------------------
+    if "analytics" in data:
+        an = data["analytics"]
+        if not isinstance(an, dict) or set(an) != {"goatcounter"}:
+            res.error("analytics は {\"goatcounter\": \"https://<コード>.goatcounter.com/count\"} だけを書けます（v18）")
+        elif not isinstance(an["goatcounter"], str) or not C.GOATCOUNTER_COUNT_RE.fullmatch(an["goatcounter"]):
+            res.error(f"analytics.goatcounter が GoatCounter の受付先ではありません: {an['goatcounter']!r}")
+
     # --- years / count -----------------------------------------------------------
     if "cover" in data:
         cover = data["cover"]
@@ -412,6 +420,16 @@ def check_config(root: Path, config_path: Path | None, res: Result) -> None:
         return
     if title is not None and title != cfg["siteTitle"]:
         res.warn(f"siteTitle（{cfg['siteTitle']}）が公開データの title（{title}）と異なります。build_gallery.py を再実行すると反映されます")
+    # GoatCounter の API キー（v18）は公開データに入れてはいけない
+    token = cfg.get("goatcounterToken") or ""
+    if len(token) >= 8:
+        for rel in ("data/photos.json", "index.html", "js/app.js", "css/style.css"):
+            try:
+                text = (root / rel).read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if token in text:
+                res.error(f"{rel} に GoatCounter の API キー（goatcounterToken）が含まれています。公開してはいけません")
 
 
 def main(argv=None) -> int:

@@ -1,4 +1,4 @@
-"""写真ビューア 共通定義（同期仕様ID PV-SPEC-2026-10-v17 / 版 17.0）
+"""写真ビューア 共通定義（同期仕様ID PV-SPEC-2026-10-v18 / 版 18.0）
 
 build_gallery.py と validate_build.py が共有する定数・日時処理・排他ロック。
 """
@@ -10,8 +10,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-SPEC_ID = "PV-SPEC-2026-10-v17"
-SPEC_VERSION = "17.0"
+SPEC_ID = "PV-SPEC-2026-10-v18"
+SPEC_VERSION = "18.0"
 SCHEMA_VERSION = 3
 
 # S-03 / S-04（仕様で固定。設定ファイルからは変更できない）
@@ -47,7 +47,26 @@ DEFAULT_CONFIG = {
     "detailQuality": 85,
     "shrinkGuardRatio": 0.5,
     "jobs": 0,
+    # アクセス解析（v18）。GoatCounter のコード（https://<コード>.goatcounter.com の <コード>）。空なら数えない
+    "goatcounter": "",
+    # ダッシュボード（v18）が GoatCounter から数を読むための API キー（Read statistics）。公開データには書かない
+    "goatcounterToken": "",
 }
+
+# GoatCounter（v18）: コードと、サイトが知らせる受付先
+GOATCOUNTER_CODE_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+GOATCOUNTER_COUNT_RE = re.compile(r"^https://[a-z0-9][a-z0-9-]{0,62}\.goatcounter\.com/count$")
+
+
+def goatcounter_code(value: str) -> str:
+    """config.json の goatcounter をコードにそろえる（「https://コード.goatcounter.com/…」のように書いてもよい）。"""
+    v = (value or "").strip().lower()
+    m = re.match(r"^(?:https?://)?([a-z0-9][a-z0-9-]*)\.goatcounter\.com(?:/.*)?$", v)
+    return m.group(1) if m else v
+
+
+def goatcounter_endpoint(code: str) -> str:
+    return f"https://{code}.goatcounter.com/count"
 
 # 以前の版で使っていた設定（読み込んでも使わない。config.json に残っていても動くが、消してよいことを知らせる）
 RETIRED_CONFIG_KEYS = {
@@ -195,6 +214,17 @@ def load_config(root: Path, config_path: Path | None = None) -> tuple:
         raise ConfigError("siteTitle は文字列である必要があります")
     if not isinstance(cfg["jobs"], int) or isinstance(cfg["jobs"], bool) or cfg["jobs"] < 0:
         raise ConfigError("jobs は 0以上の整数である必要があります（0=自動）")
+    if not isinstance(cfg["goatcounter"], str):
+        raise ConfigError("goatcounter は GoatCounter のコード（文字列。例: \"daily-photos\"）を書いてください（空なら数えない）")
+    cfg["goatcounter"] = goatcounter_code(cfg["goatcounter"])
+    if cfg["goatcounter"] and not GOATCOUNTER_CODE_RE.fullmatch(cfg["goatcounter"]):
+        raise ConfigError(
+            f"goatcounter のコードが正しくありません: {cfg['goatcounter']!r}（英小文字・数字・ハイフン。"
+            "https://<コード>.goatcounter.com の <コード> の部分）"
+        )
+    if not isinstance(cfg["goatcounterToken"], str):
+        raise ConfigError("goatcounterToken は GoatCounter の API キー（文字列）を書いてください（空ならダッシュボードはアクセス数を読まない）")
+    cfg["goatcounterToken"] = cfg["goatcounterToken"].strip()
     return cfg, used, warnings
 
 

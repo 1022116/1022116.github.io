@@ -1,4 +1,4 @@
-"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v17 / 版 17.0）
+"""ブラウザー試験（同期仕様ID PV-SPEC-2026-10-v18 / 版 18.0）
 
 Playwright（Chromium）でスマートフォン画面をエミュレートし、試験画像から生成したサイトを
 GitHub Pages と同じ「リポジトリ名のサブパス」で配信して確認する。
@@ -128,6 +128,20 @@ def make_big_gallery(main: Path, dest: Path, n: int = N_BIG) -> dict:
     return big
 
 
+COUNT_URL = "https://pvtest.goatcounter.com/count"
+
+
+def make_counted_gallery(main: Path, dest: Path) -> dict:
+    """生成済みのサイトを複製し、アクセス解析（GoatCounter の受付先）を設定したデータにする（仕様 v18 の試験用）。"""
+    import shutil
+
+    shutil.copytree(main, dest, ignore=shutil.ignore_patterns("source_photos", "logs", ".build", "tools"))
+    doc = json.loads((dest / "data" / "photos.json").read_text(encoding="utf-8"))
+    doc["analytics"] = {"goatcounter": COUNT_URL}
+    (dest / "data" / "photos.json").write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    return doc
+
+
 @pytest.fixture(scope="module")
 def site(tmp_path_factory):
     root = tmp_path_factory.mktemp("site")
@@ -140,6 +154,7 @@ def site(tmp_path_factory):
     build_gallery(single, ((2025, 1),))
     build_gallery(few, ((2023, 2),))
     big = make_big_gallery(main, root / "big" / "photo-viewer")
+    counted = make_counted_gallery(main, root / "counted" / "photo-viewer")
     with serve(root) as base:
         yield {
             "base": base,
@@ -148,6 +163,8 @@ def site(tmp_path_factory):
             "single": f"{base}/single/photo-viewer/",
             "few": f"{base}/few/photo-viewer/",
             "big": f"{base}/big/photo-viewer/",
+            "counted": f"{base}/counted/photo-viewer/",
+            "counted_doc": counted,
             "doc": doc,
             "big_doc": big,
             "ids": [p["id"] for p in doc["photos"]],
@@ -2556,6 +2573,156 @@ def test_v17_photos_come_back_developed_and_position_is_restored(pw, site):
         assert abs(page.evaluate("scrollY") - y) < 2
         settled(page, "3")
         assert sorted(page.evaluate(ON_SCREEN, TILES)) == before and before
+        w.assert_clean()
+    finally:
+        ctx.close()
+
+
+
+# ===========================================================================
+# 仕様 v18: アクセス解析（GoatCounter に直接知らせる。外部のスクリプトは読まない。#nocount で自分の端末を数えない）
+# ===========================================================================
+class Counts:
+    """GoatCounter の受付先への知らせを横取りして記録する（実際には送らない）。"""
+
+    def __init__(self, ctx):
+        from urllib.parse import parse_qsl, urlsplit
+
+        self.hits = []
+
+        def handle(route):
+            self.hits.append(dict(parse_qsl(urlsplit(route.request.url).query)))
+            route.fulfill(status=200, content_type="image/gif", body=b"GIF89a")
+
+        ctx.route("https://pvtest.goatcounter.com/**", handle)
+
+    def paths(self):
+        return [h["p"] for h in self.hits]
+
+    def events(self):
+        return [h["p"] for h in self.hits if h.get("e") == "true"]
+
+
+def test_v18_counts_page_view_chosen_view_opened_photo_and_seen(pw, site):
+    p, browser = pw
+    ctx = motion_context(browser, "2", **p.devices["iPhone 13"])
+    try:
+        counts = Counts(ctx)
+        page = ctx.new_page()
+        w = Watch(page)
+        page.goto(site["counted"] + "?from=test")
+        page.wait_for_selector("html[data-pv=ready]")
+        page.wait_for_timeout(300)
+        views = [h for h in counts.hits if h.get("e") != "true"]
+        assert len(views) == 1 and views[0]["p"].endswith("/counted/photo-viewer/") and views[0]["q"] == "?from=test"
+        assert views[0]["t"] == site["counted_doc"]["title"] and views[0]["s"] == "390"
+        assert counts.events()[0] == "view/2" and counts.hits[1]["t"] == "並べる"
+        # 送るのは決まった項目だけ（クッキーや写真の場所などは送らない）
+        assert all(set(h) <= {"p", "t", "r", "q", "e", "s", "b", "rnd"} for h in counts.hits)
+        # スクロールして写真を見ると、見た枚数（10枚・30枚…）
+        for _ in range(12):
+            page.mouse.wheel(0, 600)
+            page.wait_for_timeout(120)
+        page.wait_for_timeout(500)
+        seen = [e for e in counts.events() if e.startswith("seen/")]
+        assert seen[:2] == ["seen/10", "seen/30"] and len(seen) == len(set(seen))
+        # 全画面で開いた写真（前後に送った写真は数えない）
+        page.evaluate("window.scrollTo(0, 0)")
+        page.wait_for_timeout(300)
+        page.click(".eg-tile[data-index='3']")
+        page.wait_for_function("document.getElementById('viewer').open")
+        page.keyboard.press("ArrowRight")
+        page.keyboard.press("ArrowRight")
+        page.keyboard.press("Escape")
+        photos = [h for h in counts.hits if h["p"].startswith("photo/")]
+        assert [h["p"] for h in photos] == ["photo/" + site["ids"][3]] and photos[0]["t"] == site["doc"]["photos"][3]["date"][:10].replace("-", ".")
+        # 見せ方を選び直すと知らせる（同じ見せ方は1回だけ）
+        page.click("#pattern-switch")
+        page.click(".chooser-opt[data-pattern='3']")
+        page.evaluate("document.getElementById('pattern-switch').click()")  # 揺れるでは、このボタンはキーボードで移ったときだけ見える
+        page.click(".chooser-opt[data-pattern='2']")
+        assert [e for e in counts.events() if e.startswith("view/")] == ["view/2", "view/3"]
+        # 送り先は設定した受付先だけ（外部のスクリプトは読まない）
+        assert all(u.startswith(site["counted"]) or u.startswith(COUNT_URL) for u in w.requests), [u for u in w.requests if "goatcounter" not in u and not u.startswith(site["counted"])]
+        w.assert_clean()
+    finally:
+        ctx.close()
+
+
+def test_v18_still_and_drift_views_are_counted(pw, site):
+    p, browser = pw
+    ctx = browser.new_context(**p.devices["iPhone 13"], **STILL)
+    try:
+        counts = Counts(ctx)
+        page, w = open_page(ctx, site["counted"])
+        page.wait_for_timeout(300)
+        for _ in range(8):
+            page.mouse.wheel(0, 700)
+            page.wait_for_timeout(100)
+        page.wait_for_timeout(400)
+        ev = counts.events()
+        assert ev[0] == "view/still" and "seen/10" in ev
+        w.assert_clean()
+    finally:
+        ctx.close()
+    ctx = motion_context(browser, "1", **p.devices["iPhone 13"])
+    try:
+        counts = Counts(ctx)
+        page, w = open_drift(ctx, site["counted"])
+        for _ in range(6):
+            page.keyboard.press("PageDown")
+            page.wait_for_timeout(250)
+        drift_settled(page)
+        ev = counts.events()
+        assert ev[0] == "view/1" and "seen/10" in ev
+        w.assert_clean()
+    finally:
+        ctx.close()
+
+
+def test_v18_nocount_turns_counting_off_for_this_browser(pw, site):
+    p, browser = pw
+    ctx = motion_context(browser, "2", **p.devices["iPhone 13"])
+    try:
+        counts = Counts(ctx)
+        page = ctx.new_page()
+        w = Watch(page)
+        messages = []
+        page.on("dialog", lambda d: (messages.append(d.message), d.accept()))
+        page.goto(site["counted"] + "#nocount")
+        page.wait_for_selector("html[data-pv=ready]")
+        page.wait_for_timeout(300)
+        assert messages and "数えない" in messages[0]
+        assert page.evaluate("location.hash") == ""  # 印はアドレスから消す
+        assert page.evaluate("localStorage.getItem('pv:nocount')") == "1"
+        page.click(".eg-tile[data-index='1']")
+        page.keyboard.press("Escape")
+        page.reload()
+        page.wait_for_selector("html[data-pv=ready]")
+        page.wait_for_timeout(300)
+        assert counts.hits == []  # この端末の分は数えない（再読込しても）
+        # 開いているページのアドレスに #count を付け足しても（読み込み直されない）元に戻る
+        page.evaluate("location.hash = '#count'")
+        page.wait_for_function("location.hash === ''")
+        assert "戻しました" in messages[-1] and page.evaluate("localStorage.getItem('pv:nocount')") is None
+        page.reload()
+        page.wait_for_selector("html[data-pv=ready]")
+        page.wait_for_timeout(300)
+        assert [h["p"] for h in counts.hits][1] == "view/2" and len(counts.hits) >= 2  # また数える
+        w.assert_clean()
+    finally:
+        ctx.close()
+
+
+def test_v18_sites_without_analytics_send_nothing(pw, site):
+    p, browser = pw
+    ctx = motion_context(browser, "3", **p.devices["iPhone 13"])
+    try:
+        page, w = open_page(ctx, site["main"])
+        page.mouse.wheel(0, 800)
+        page.wait_for_timeout(500)
+        assert not [u for u in w.requests if "goatcounter" in u]
+        assert "analytics" not in site["doc"]
         w.assert_clean()
     finally:
         ctx.close()

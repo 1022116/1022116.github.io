@@ -34,8 +34,8 @@ def make_project(dest: Path) -> Path:
     (dest / "mids" / ".gitkeep").touch()
     # 実プロジェクトの公開データに依存しないよう、常に空のギャラリーから始める
     empty = {
-        "specId": "PV-SPEC-2026-10-v17",
-        "specVersion": "17.0",
+        "specId": "PV-SPEC-2026-10-v18",
+        "specVersion": "18.0",
         "schemaVersion": 3,
         "title": "写真",
         "timezone": "Asia/Tokyo",
@@ -211,3 +211,109 @@ def run_publish(project: Path, *args: str, env: dict | None = None, timeout: int
         env=e,
         timeout=timeout,
     )
+
+
+class FakeGoatCounter:
+    """GoatCounter の API の代わり（仕様 v18 のダッシュボードの試験用）。決まった数を返し、受けた問い合わせを記録する。
+
+    status を 401 / 403 / 500 にするとそのエラーを返す。token が違えば 401。
+    """
+
+    VIEWS = {"view/1": 21, "view/2": 9, "view/3": 14, "view/still": 2}
+    SEEN = {"seen/10": 30, "seen/30": 18, "seen/60": 9, "seen/100": 4, "seen/all": 1}
+
+    def __init__(self, photo_ids, token: str = "fake-token-0123456789", status: int = 200):
+        self.photo_ids = list(photo_ids)
+        self.token = token
+        self.status = status
+        self.requests = []
+        self._srv = None
+
+    @property
+    def base(self) -> str:
+        return f"http://127.0.0.1:{self._srv.server_port}/api/v0"
+
+    def __enter__(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        fake = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                from urllib.parse import parse_qs, urlsplit
+
+                u = urlsplit(self.path)
+                q = {k: v[0] for k, v in parse_qs(u.query).items()}
+                fake.requests.append((u.path, q, self.headers.get("Authorization")))
+                if self.headers.get("Authorization") != f"Bearer {fake.token}":
+                    return self._send(401, {"error": "unauthorized"})
+                if fake.status != 200:
+                    return self._send(fake.status, {"error": "fake error"})
+                if u.path == "/api/v0/stats/hits":
+                    return self._send(200, fake.hits(q))
+                if u.path.startswith("/api/v0/stats/"):
+                    return self._send(200, fake.stats(u.path.rsplit("/", 1)[1]))
+                return self._send(404, {"error": "not found"})
+
+            def _send(self, code, obj):
+                body = json.dumps(obj).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        self._srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._srv.daemon_threads = True
+        threading.Thread(target=self._srv.serve_forever, daemon=True).start()
+        return self
+
+    def __exit__(self, *exc):
+        self._srv.shutdown()
+        self._srv.server_close()
+
+    @staticmethod
+    def _days(q):
+        from datetime import date, datetime, timedelta
+
+        start = datetime.fromisoformat(q["start"].replace("Z", "+00:00")) + timedelta(hours=9)
+        end = datetime.fromisoformat(q["end"].replace("Z", "+00:00")) + timedelta(hours=9) - timedelta(seconds=1)
+        d, out = start.date(), []
+        while d <= end.date():
+            out.append(d)
+            d += timedelta(days=1)
+        return out
+
+    def hits(self, q):
+        days = self._days(q)
+        stats = []
+        for k, d in enumerate(days):
+            daily = (d.toordinal() * 7) % 9 + 1  # 1〜9人（日によって違う）
+            hourly = [0] * 24
+            for i in range(daily):
+                hourly[(9 + i * 5) % 24] += 1
+            stats.append({"day": d.isoformat(), "daily": daily, "hourly": hourly})
+        total = sum(s["daily"] for s in stats)
+        hits = [{"path": "/", "path_id": 1, "event": False, "count": total, "title": "写真", "stats": stats}]
+        scale = max(1, len(days) // 7)
+        for i, (p, n) in enumerate(list(self.VIEWS.items()) + list(self.SEEN.items())):
+            hits.append({"path": p, "path_id": 10 + i, "event": True, "count": n * scale, "stats": []})
+        for i, pid in enumerate(self.photo_ids[:15]):
+            hits.append({"path": f"photo/{pid}", "path_id": 100 + i, "event": True, "count": (15 - i) * scale, "stats": []})
+        hits.append({"path": "photo/0000deadbeef0000", "path_id": 99, "event": True, "count": 1, "stats": []})  # 今はない写真
+        hits.sort(key=lambda h: -h["count"])
+        return {"hits": hits, "total": total, "more": False}
+
+    def stats(self, page):
+        data = {
+            "toprefs": [("instagram.com", 12), ("", 9), ("t.co", 3), ("example.org", 1)],
+            "systems": [("iOS", 18), ("Android", 7), ("Windows", 4), ("macOS", 2)],
+            "browsers": [("Safari", 17), ("Chrome", 11), ("Edge", 3)],
+            "sizes": [("phone", 24), ("tablet", 2), ("desktop", 5), ("desktophd", 0), ("unknown", 0)],
+            "locations": [("Japan", 29), ("Taiwan", 1), ("<script>alert(1)</script>", 1)],
+        }.get(page, [])
+        return {"stats": [{"id": n or "", "name": n, "count": c} for n, c in data], "more": False}

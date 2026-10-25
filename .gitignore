@@ -10,6 +10,9 @@ config.json
 logs/
 .locks/
 
+# PC の中だけで見るダッシュボード（v18。アクセス数・公開の記録を含むため公開しない）
+dashboard/
+
 # Python
 .venv/
 venv/

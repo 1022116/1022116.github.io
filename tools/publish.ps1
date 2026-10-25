@@ -1,7 +1,7 @@
 ﻿<#
 .SYNOPSIS
   写真ビューアを生成・検証・試験してから GitHub Pages へ公開します。
-  同期仕様ID PV-SPEC-2026-10-v17 / 版 17.0
+  同期仕様ID PV-SPEC-2026-10-v18 / 版 18.0
 
 .DESCRIPTION
   次の順に実行し、どこかで失敗したら commit / push は行いません（S-10）。
@@ -13,6 +13,7 @@
     6. pytest  : tests/
     7. Git 対象の安全確認（原本・秘密情報・未許可ファイルを含まないこと）
     8. 差分がある時だけ commit / push
+  最後に、成功・停止にかかわらず PC の中だけで見るダッシュボード（dashboard\index.html）を作り直します（v18）。
 
 .PARAMETER DryRun
   commit / push をせず、公開される予定のファイルだけを表示します。
@@ -58,8 +59,8 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$SpecId = 'PV-SPEC-2026-10-v17'
-$SpecVersion = '17.0'
+$SpecId = 'PV-SPEC-2026-10-v18'
+$SpecVersion = '18.0'
 $ExitFailed = 1
 $ExitGuard = 2
 $ExitBusy = 75
@@ -169,6 +170,30 @@ function Push-Branch {
 
 $script:LockStream = $null
 $script:Staged = $false
+
+function Update-Dashboard {
+    # 仕様 v18: 公開の結果（成功・停止）も含めて、PC の中だけで見るダッシュボード（dashboard\index.html）を作り直す。
+    # 作れなくても公開の結果（終了コード）は変えない。DryRun では作らない
+    if ($DryRun) { return }
+    if ($Python) { $dpy = $Python }
+    elseif ($OnWindows) { $dpy = Join-Path $Root '.venv\Scripts\python.exe' }
+    else { $dpy = Join-Path $Root '.venv/bin/python' }
+    $tool = Join-Path $Root 'tools/make_dashboard.py'
+    if (-not (Test-Path -LiteralPath $dpy) -or -not (Test-Path -LiteralPath $tool)) { return }
+    try {
+        $r = Invoke-Capture $dpy @($tool, '--root', $Root)
+        foreach ($line in $r.Lines) {
+            if ($line.StartsWith('注意: ')) { Write-Log 'INFO' ('ダッシュボード: ' + $line.Substring(4)) }
+        }
+        if ($r.Code -eq 0) {
+            Write-Log 'INFO' ('ダッシュボードを更新しました: {0}' -f (Join-Path $Root 'dashboard\index.html'))
+        } else {
+            Write-Log 'WARN' ('ダッシュボードを更新できませんでした（公開の結果には影響しません）: {0}' -f (($r.Lines | Select-Object -Last 1) -join ''))
+        }
+    } catch {
+        Write-Log 'WARN' "ダッシュボードを更新できませんでした（公開の結果には影響しません）: $($_.Exception.Message)"
+    }
+}
 
 function Invoke-Publish {
     Write-Log 'INFO' "写真ビューア公開 同期仕様ID $SpecId / 版 $SpecVersion"
@@ -361,4 +386,5 @@ try {
 } finally {
     if ($script:LockStream) { $script:LockStream.Dispose() }
 }
+Update-Dashboard
 exit $script:ExitCode

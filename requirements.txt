@@ -1,4 +1,4 @@
-# 写真ビューア（同期仕様ID PV-SPEC-2026-10-v17 / 版 17.0）
+# 写真ビューア（同期仕様ID PV-SPEC-2026-10-v18 / 版 18.0）
 # 仮想環境で:  python -m pip install -r requirements.txt
 
 # 必須: 画像変換・検証

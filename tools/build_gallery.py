@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""写真ビューア 生成スクリプト（同期仕様ID PV-SPEC-2026-10-v17 / 版 17.0）
+"""写真ビューア 生成スクリプト（同期仕様ID PV-SPEC-2026-10-v18 / 版 18.0）
 
 原本フォルダー（既定: source_photos/）を再帰走査し、公開用の
   photos/<年>/<id>.webp   … 詳細画像（元の縦横比・長辺最大1920px・メタデータなし）
@@ -678,6 +678,9 @@ def build(
             "cover": cover_id,
             "photos": photos,
         }
+        if cfg["goatcounter"]:
+            # アクセス解析（v18）: サイトが知らせる GoatCounter の受付先だけを書く（API キーは書かない）
+            doc["analytics"] = {"goatcounter": C.goatcounter_endpoint(cfg["goatcounter"])}
         try:
             _write_text(staging / "data" / "photos.json", json.dumps(doc, ensure_ascii=False, indent=2) + "\n")
         except OSError as exc:
