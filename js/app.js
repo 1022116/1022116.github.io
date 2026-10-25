@@ -1,5 +1,5 @@
 /*
- * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v17 / 版 17.0）
+ * 写真ビューア（同期仕様ID PV-SPEC-2026-10-v18 / 版 18.0）
  * HTML / CSS / Vanilla JavaScript のみ。外部CDN・ライブラリなし。URLはすべて相対（GitHub Pages のサブパスで動作）。
  *
  * ■ 一覧（v13）
@@ -7,6 +7,11 @@
  *       「No.」は付けない）と撮影日を添える。v12 までの年のタブ・散らした年の文字・「〜年の〜枚」は廃止。
  *       （photos.json の year は生成側の S-01 として残るが、画面では使わない）
  *   - 撮影年の範囲（例: 2025–2026）だけを小さく表示する。表示できないデータがあるときはその件数も出す。
+ *
+ * ■ アクセス解析（v18）
+ *   - photos.json に GoatCounter の受付先（analytics.goatcounter）があるときだけ、ページを開いたこと・見せ方・
+ *       全画面で開いた写真・見た写真の枚数を GoatCounter へ直接知らせる（外部のスクリプトは読まない。クッキーなし）。
+ *       アドレスの最後に #nocount を付けて開くと、その端末（ブラウザー）では数えない（#count で戻す）。下の「アクセス解析」を参照。
  *
  * ■ 画面の近くだけ部品を作る（v17。写真が増えても軽いまま）
  *   - 動く見せ方（パターン1〜3）では、全部の写真の位置と大きさを数字として計算し、部品（ボタン・画像・番号と日付、
@@ -273,6 +278,99 @@
   function posInt(v) { return (typeof v === 'number' && v > 0 && Math.floor(v) === v) ? v : 0; }
   function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
 
+  // ---------------------------------------------------------------- アクセス解析（v18。GoatCounter）
+  // photos.json に analytics.goatcounter（GoatCounter の受付先「<コード>.goatcounter.com/count」）があるときだけ数える。
+  // 外部のスクリプトは読み込まず、GoatCounter の受付先へ直接知らせる（クッキーは使わない）。知らせるもの:
+  //   - ページを開いた（/。リンク元・画面の幅・アドレスの ? 以降も一緒に）
+  //   - 見せ方（view/1 散らばる・view/2 並べる・view/3 揺れる・view/still 動かない一覧。開いたとき・選び直したとき）
+  //   - 全画面で開いた写真（photo/<写真ID>。一覧・表紙から開いたときだけ。全画面の中で前後に送った写真は数えない）
+  //   - 見た写真の枚数（画面に入った写真が 10・30・60・100・200・500・1000 枚に達したとき seen/<枚数>、全部見たら seen/all）
+  // この端末の閲覧を数えないようにするには、アドレスの最後に #nocount を付けて一度開く（#count で元に戻す）。
+  var COUNT_URL_RE = /^https:\/\/[a-z0-9][a-z0-9-]{0,62}\.goatcounter\.com\/count$/;
+  var NOCOUNT_KEY = 'pv:nocount';
+  var SEEN_STEPS = [10, 30, 60, 100, 200, 500, 1000];
+  var VIEW_NAMES = {
+    drift: ['view/1', '散らばる'], elastic: ['view/2', '並べる'], sway: ['view/3', '揺れる'], still: ['view/still', '動かない一覧']
+  };
+  var counter = { url: '', once: {}, seen: {}, nSeen: 0 };
+
+  // #nocount / #count: 開いたときのほか、開いているページのアドレスに付け足したとき（ページは読み込み直されない）も
+  function countHash() {
+    var h = location.hash;
+    if (h !== '#nocount' && h !== '#count') return;
+    if (h === '#nocount') storageSet('localStorage', NOCOUNT_KEY, '1');
+    else storageRemove('localStorage', NOCOUNT_KEY);
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* noop */ }
+    try {
+      window.alert(h === '#nocount'
+        ? 'この端末（このブラウザー）で見た分は、アクセス数に数えないようにしました。元に戻すときは、アドレスの最後に #count を付けて開いてください。'
+        : 'この端末（このブラウザー）で見た分も、アクセス数に数えるように戻しました。');
+    } catch (e) { /* noop */ }
+  }
+  countHash();
+  window.addEventListener('hashchange', countHash);
+
+  function countSend(params) {
+    if (!counter.url || storageGet('localStorage', NOCOUNT_KEY) === '1') return;
+    if (document.visibilityState === 'prerender') return;
+    params.s = (window.screen && window.screen.width) || '';
+    if (navigator.webdriver) params.b = 153; // 自動操作のブラウザー（GoatCounter は数に入れない）
+    params.rnd = Math.random().toString(36).slice(2, 7);
+    var q = [];
+    for (var k in params) {
+      if (params[k] !== '' && params[k] !== null && params[k] !== undefined && params[k] !== false) {
+        q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
+      }
+    }
+    var url = counter.url + '?' + q.join('&');
+    var ok = false;
+    try { ok = !!(navigator.sendBeacon && navigator.sendBeacon(url)); } catch (e) { ok = false; }
+    if (!ok) {
+      var img = new Image(); // 送れなかったとき（古いブラウザーなど）は画像の読み込みとして知らせる
+      img.src = url;
+    }
+  }
+  function countEvent(path, title) {
+    countSend({ p: path, t: title || '', e: true });
+  }
+  function countOnce(key, path, title) {
+    if (counter.once[key]) return;
+    counter.once[key] = true;
+    countEvent(path, title);
+  }
+  // 写真データを読み込んだら、ページを開いたことと今の見せ方を知らせる（画面が隠れているときは見えるようになってから）
+  function countStart(url) {
+    if (counter.url || !url || !COUNT_URL_RE.test(url)) return;
+    counter.url = url;
+    var go = function () {
+      countSend({ p: location.pathname || '/', t: document.title, r: document.referrer, q: location.search });
+      countView();
+    };
+    if (document.visibilityState === 'hidden') {
+      var f = function () {
+        if (document.visibilityState === 'hidden') return;
+        document.removeEventListener('visibilitychange', f);
+        go();
+      };
+      document.addEventListener('visibilitychange', f);
+    } else {
+      go();
+    }
+  }
+  function countView() {
+    var v = VIEW_NAMES[state.mode];
+    if (v && state.ready) countOnce(v[0], v[0], v[1]);
+  }
+  // 画面に入った写真（同じ写真は1回）。決まった枚数に達したら知らせる
+  function countSeen(index) {
+    if (!counter.url || index < 0 || counter.seen[index]) return;
+    counter.seen[index] = true;
+    counter.nSeen++;
+    var n = counter.nSeen;
+    if (SEEN_STEPS.indexOf(n) >= 0) countOnce('seen/' + n, 'seen/' + n, n + '枚');
+    if (n === state.list.length) countOnce('seen/all', 'seen/all', '全部');
+  }
+
   // ---------------------------------------------------------------- データ読込
   function parseData(data) {
     var entries;
@@ -325,7 +423,10 @@
     // 目録番号: いちばん古い写真が 1。年で絞り込んでも番号は変わらない
     for (var k = 0; k < photos.length; k++) photos[k].no = photos.length - k;
     var cover = (data && typeof data === 'object' && !Array.isArray(data) && typeof data.cover === 'string') ? data.cover : null;
-    return { photos: photos, title: title, invalid: invalid, cover: cover };
+    // アクセス解析の受付先（v18。形が違えば使わない）
+    var an = (data && typeof data === 'object' && !Array.isArray(data) && data.analytics) || null;
+    var countUrl = (an && typeof an.goatcounter === 'string' && COUNT_URL_RE.test(an.goatcounter)) ? an.goatcounter : '';
+    return { photos: photos, title: title, invalid: invalid, cover: cover, countUrl: countUrl };
   }
 
   function errorMessage(err) {
@@ -416,6 +517,7 @@
     }
     renderList({ restore: true });
     state.ready = true;
+    if (state.photos.length) countStart(parsed.countUrl); // アクセス解析（v18）
     var token = state.loadToken;
     whenLayoutStable(function () {
       if (token !== state.loadToken) return;
@@ -545,6 +647,7 @@
           // 同時に画面に入った写真は少しずつずらして現像する（最大 0.4 秒）
           t.style.setProperty('--develop-delay', Math.min(k++ * 80, 400) + 'ms');
           t.setAttribute('data-seen', '1');
+          if (t.hasAttribute('data-index')) countSeen(Number(t.getAttribute('data-index'))); // 見た枚数（v18）
           tryDevelop(t);
         });
       }, { threshold: 0.15 });
@@ -1168,6 +1271,7 @@
           it.btn.setAttribute('data-seen', '1');
           tryDevelop(it.btn);
         }
+        if (visible && !it.label) countSeen(it.index); // 見た枚数（v18）
       }
     }
     if (!introOn) el.drift.removeAttribute('data-intro');
@@ -2398,6 +2502,7 @@
       window.scrollTo(0, 0);
       renderList({ restore: true });
     }
+    countView(); // 見せ方を知らせる（v18。同じ見せ方は1回だけ）
   }
 
   function openChooser() {
@@ -2476,6 +2581,7 @@
     cancelSwipe();
     cancelPendingSave();
     if (!state.open) {
+      if (list === state.list && list[index]) countEvent('photo/' + list[index].id, formatDot(list[index].ms)); // v18
       saveScrollNow();
       state.open = true;
       state.viewOpened = index;

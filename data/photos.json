@@ -1,6 +1,6 @@
 {
-  "specId": "PV-SPEC-2026-10-v17",
-  "specVersion": "17.0",
+  "specId": "PV-SPEC-2026-10-v18",
+  "specVersion": "18.0",
   "schemaVersion": 3,
   "title": "Daily",
   "timezone": "Asia/Tokyo",
@@ -2603,5 +2603,8 @@
       "alt": "2025年8月14日 16:40 撮影の写真",
       "dateSource": "exif"
     }
-  ]
+  ],
+  "analytics": {
+    "goatcounter": "https://photo-viewer.goatcounter.com/count"
+  }
 }
