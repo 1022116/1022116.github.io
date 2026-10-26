@@ -107,8 +107,9 @@ def test_dashboard_shows_visitors_views_and_site_status(site):
     assert TOKEN not in html
     assert all(auth == f"Bearer {TOKEN}" for _, _, auth in fake.requests)
     assert len(fake.requests) == 21  # 3つの期間 × (今と前の期間の hits ＋ リンク元・OS・ブラウザー・画面・地域)
+    # リンク元・OS などは、ページを開いた分（path_id 1 の "/"）だけ。番号で絞る（名前で探させない）
     detail = [q for path, q, _ in fake.requests if path.endswith("/stats/systems")]
-    assert detail and all(q.get("path_by_name") == "true" and q.get("include_paths") == "/" for q in detail)
+    assert detail and all(q.get("include_paths") == "1" and "path_by_name" not in q for q in detail)
     cache = json.loads((site / "dashboard" / "cache.json").read_text(encoding="utf-8"))
     assert cache["code"] == "daily-photos" and TOKEN not in json.dumps(cache)
 
@@ -164,6 +165,46 @@ def test_unreachable_goatcounter_uses_the_last_values(site):
     assert "アクセス数を読めませんでした" in html and "に読んだ値です" in html
     assert "instagram.com" in html and html.count('class="period p-') == 3  # 前回の値で出す
     assert "instagram.com" in good
+
+
+def test_one_list_failing_keeps_the_rest(site):
+    """リンク元などの一覧の1つが GoatCounter でエラーになっても、訪問者の数やほかの一覧は出す。どれが読めなかったかを書く。"""
+    config(site, goatcounter="daily-photos", goatcounterToken=TOKEN)
+    ids = [p["id"] for p in load_photos(site)["photos"]]
+    with FakeGoatCounter(ids, token=TOKEN, detail_status={"toprefs": 404, "locations": 500}) as fake:
+        _target, notes = D.build(site, api_base=fake.base, now=NOW)
+    html = page_of(site)
+    text = visible_text(html)
+    assert len(notes) == 1 and notes[0].startswith("一部の一覧を読めませんでした")
+    assert "リンク元: GoatCounter が「見つかりません」と答えました（/stats/toprefs）" in notes[0]
+    assert "地域: GoatCounter からエラーが返りました（HTTP 500、/stats/locations" in notes[0]
+    assert "コードが見つかりません" not in html  # 404 はコードの間違いではない
+    assert "一部の一覧を読めませんでした" in text and "ほかの数は読めています" in text
+    assert text.count("読めませんでした（上のお知らせ）") == 6  # 2つの一覧 × 3つの期間
+    assert "instagram.com" not in html and "Japan" not in html
+    assert "iOS" in text and "Safari" in text and "スマホ（幅600以下）" in text and "散らばる" in text
+    assert re.search(r'class="hero">\d', html)
+    cache = json.loads((site / "dashboard" / "cache.json").read_text(encoding="utf-8"))
+    assert cache["periods"]["7"]["refs"] is None and cache["failed"]
+
+
+def test_wrong_code_is_explained(site):
+    config(site, goatcounter="nosuch", goatcounterToken=TOKEN)
+    with FakeGoatCounter([], token=TOKEN, no_site=True) as fake:
+        _target, notes = D.build(site, api_base=fake.base, now=NOW)
+    assert notes and "GoatCounter のコードが見つかりません" in notes[0]
+    assert len(fake.requests) == 1  # 続けて問い合わせない
+
+
+def test_hits_without_path_ids_use_path_names(site):
+    config(site, goatcounter="daily-photos", goatcounterToken=TOKEN)
+    ids = [p["id"] for p in load_photos(site)["photos"]]
+    with FakeGoatCounter(ids, token=TOKEN, path_ids=False) as fake:
+        _target, notes = D.build(site, api_base=fake.base, now=NOW)
+    assert notes == []
+    detail = [q for path, q, _ in fake.requests if path.endswith("/stats/toprefs")]
+    assert detail and all(q.get("path_by_name") == "true" and q.get("include_paths") == "/" for q in detail)
+    assert "instagram.com" in page_of(site)
 
 
 @pytest.mark.parametrize("status,words", [(401, "API キーが正しくありません"), (403, "Read statistics")])

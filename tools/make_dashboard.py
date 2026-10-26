@@ -54,7 +54,31 @@ API_PAUSE = 0.3  # GoatCounter の API は 1秒に4回まで
 
 
 class GCError(Exception):
-    """GoatCounter から読めなかった（理由を画面に出す）。"""
+    """GoatCounter から読めなかった（理由を画面に出す）。
+
+    fatal: キー・コード・接続の問題など、続けて問い合わせても無駄なもの。
+    そうでないもの（ある一覧だけ 404 / 500 など）は、その一覧だけ「読めませんでした」にして残りを出す。
+    """
+
+    def __init__(self, message: str, fatal: bool = True):
+        super().__init__(message)
+        self.fatal = fatal
+
+
+DETAIL_PAGES = (("toprefs", "リンク元"), ("systems", "OS"), ("browsers", "ブラウザー"), ("sizes", "画面の大きさ"), ("locations", "地域"))
+
+
+def _server_said(body: str) -> str:
+    """GoatCounter のエラー応答（{"error": "..."}）から、理由を短く取り出す（画面に出すときはエスケープする）。"""
+    try:
+        obj = json.loads(body)
+    except ValueError:
+        return ""
+    said = obj.get("error") if isinstance(obj, dict) else None
+    if not said and isinstance(obj, dict) and isinstance(obj.get("errors"), dict):
+        said = "; ".join(f"{k}: {v}" for k, v in obj["errors"].items())
+    said = " ".join(str(said or "").split())
+    return said[:120]
 
 
 # ---------------------------------------------------------------------------
@@ -102,13 +126,23 @@ class GoatCounterAPI:
                     wait = exc.headers.get("X-Rate-Limit-Reset") if exc.headers else None
                     time.sleep(min(10.0, float(wait)) if wait and wait.replace(".", "", 1).isdigit() else 2.0)
                     continue
+                try:
+                    body = exc.read(4000).decode("utf-8", "replace")
+                except Exception:
+                    body = ""
+                said = _server_said(body)
                 if exc.code == 401:
                     raise GCError("API キーが正しくありません（config.json の goatcounterToken を確認してください）")
                 if exc.code == 403:
-                    raise GCError("API キーに「Read statistics（統計の読み取り）」の権限がありません")
-                if exc.code == 404:
+                    raise GCError("API キーに「Read statistics（統計の読み取り）」の権限がありません"
+                                  + (f"（{said}）" if said and "permission" not in said else ""))
+                if exc.code == 400 and "no site at this domain" in body:
                     raise GCError("GoatCounter のコードが見つかりません（config.json の goatcounter を確認してください）")
-                raise GCError(f"GoatCounter からエラーが返りました（HTTP {exc.code}）")
+                if exc.code == 404:
+                    # 宛先は合っていて、GoatCounter の中で何かが見つからなかった（コードの間違いは 400 で返る）
+                    raise GCError(f"GoatCounter が「見つかりません」と答えました（{path}）", fatal=False)
+                raise GCError(f"GoatCounter からエラーが返りました（HTTP {exc.code}、{path}"
+                              + (f"：{said}" if said else "") + "）", fatal=False)
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 raise GCError(f"GoatCounter に接続できませんでした（{getattr(exc, 'reason', exc)}）")
             except ValueError:
@@ -150,13 +184,25 @@ def fetch_period(api: GoatCounterAPI, days: int, now: datetime) -> dict:
         days_list.append([key, by_day.get(key, 0)])
         d += timedelta(days=1)
 
-    page_names = ",".join(str(h.get("path")) for h in pages if h.get("path"))
-    detail = {}
-    for page in ("toprefs", "systems", "browsers", "sizes", "locations"):
-        params = dict(rng, limit=20)
-        if page_names:  # ページを開いた分だけ（イベントの分は数えない）
-            params.update(path_by_name="true", include_paths=page_names)
-        detail[page] = _stats_list(api.get(f"/stats/{page}", params)) if pages else []
+    # リンク元・OS などは、ページを開いた分だけ（イベントの分は数えない）。ページの番号（path_id）で絞る。
+    # 番号がない応答のときだけ、名前で絞る（path_by_name）
+    ids = [h.get("path_id") for h in pages]
+    if ids and all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
+        only_pages = {"include_paths": ",".join(str(i) for i in ids)}
+    else:
+        only_pages = {"path_by_name": "true", "include_paths": ",".join(str(h.get("path")) for h in pages if h.get("path"))}
+    detail, failed = {}, []
+    for page, label in DETAIL_PAGES:
+        if not pages:
+            detail[page] = []
+            continue
+        try:
+            detail[page] = _stats_list(api.get(f"/stats/{page}", dict(rng, limit=20, **only_pages)))
+        except GCError as exc:
+            if exc.fatal:
+                raise
+            detail[page] = None  # この一覧だけ「読めませんでした」
+            failed.append(f"{label}: {exc}")
 
     photos = sorted(
         ([p[len("photo/"):], int(h.get("count") or 0)] for p, h in events.items() if p.startswith("photo/")),
@@ -176,6 +222,7 @@ def fetch_period(api: GoatCounterAPI, days: int, now: datetime) -> dict:
         "seen": {f"seen/{n}": int((events.get(f"seen/{n}") or {}).get("count") or 0) for n in SEEN_STEPS}
         | {"seen/all": int((events.get("seen/all") or {}).get("count") or 0)},
         "photos": photos[:24],
+        "failed": failed,
     }
 
 
@@ -183,7 +230,12 @@ def fetch_access(code: str, token: str, api_base: str | None, now: datetime) -> 
     base = api_base or f"https://{code}.goatcounter.com/api/v0"
     api = GoatCounterAPI(base, token)
     periods = {str(n): fetch_period(api, n, now) for n in PERIODS}
-    return {"fetchedAt": C.to_iso_jst(now), "code": code, "periods": periods}
+    failed = []
+    for n in PERIODS:
+        for f in periods[str(n)].get("failed") or []:
+            if f not in failed:
+                failed.append(f)
+    return {"fetchedAt": C.to_iso_jst(now), "code": code, "periods": periods, "failed": failed}
 
 
 # ---------------------------------------------------------------------------
@@ -432,18 +484,24 @@ def render_period(days: int, p: dict, local: dict) -> str:
     out.append(f'<figure class="card"><figcaption>見られている時間帯（日本時間）</figcaption>{hourly}'
                + table(["時間", "訪問者"], [[f"{h}時台", v] for h, v in enumerate(hours)]) + "</figure>")
     out.append('<div class="cards">')
-    refs = [[("（直接・ブックマーク・LINE など）" if not n or n == "(no data)" else n), v] for n, v in p["refs"]]
-    out.append(f'<figure class="card"><figcaption>どこから来たか（リンク元）</figcaption>{hbars(top_rows(refs, 10), "人")}'
-               + table(["リンク元", "訪問者"], refs) + "</figure>")
-    sizes = [[SIZE_NAMES.get(n, n), v] for n, v in p["sizes"]]
-    out.append(f'<figure class="card"><figcaption>画面の大きさ</figcaption>{hbars(sizes, "人", total=sum(v for _, v in sizes))}'
-               + table(["画面", "訪問者"], sizes) + "</figure>")
-    out.append(f'<figure class="card"><figcaption>OS</figcaption>{hbars(top_rows(p["systems"]), "人")}'
-               + table(["OS", "訪問者"], p["systems"]) + "</figure>")
-    out.append(f'<figure class="card"><figcaption>ブラウザー</figcaption>{hbars(top_rows(p["browsers"]), "人")}'
-               + table(["ブラウザー", "訪問者"], p["browsers"]) + "</figure>")
-    out.append(f'<figure class="card"><figcaption>地域</figcaption>{hbars(top_rows(p["locations"]), "人")}'
-               + table(["地域", "訪問者"], p["locations"]) + "</figure>")
+
+    def card(title: str, head: str, rows, k: int = 8, total: bool = False) -> str:
+        if rows is None:  # GoatCounter から、この一覧だけ読めなかった
+            return f'<figure class="card"><figcaption>{esc(title)}</figcaption><p class="empty">読めませんでした（上のお知らせ）</p></figure>'
+        bars = hbars(rows if total else top_rows(rows, k), "人", total=sum(v for _, v in rows) if total else None)
+        return f'<figure class="card"><figcaption>{esc(title)}</figcaption>{bars}' + table([head, "訪問者"], rows) + "</figure>"
+
+    refs = p.get("refs")
+    if refs is not None:
+        refs = [[("（直接・ブックマーク・LINE など）" if not n or n == "(no data)" else n), v] for n, v in refs]
+    sizes = p.get("sizes")
+    if sizes is not None:
+        sizes = [[SIZE_NAMES.get(n, n), v] for n, v in sizes]
+    out.append(card("どこから来たか（リンク元）", "リンク元", refs, k=10))
+    out.append(card("画面の大きさ", "画面", sizes, total=True))
+    out.append(card("OS", "OS", p.get("systems")))
+    out.append(card("ブラウザー", "ブラウザー", p.get("browsers")))
+    out.append(card("地域", "地域", p.get("locations")))
     out.append("</div></section>")
 
     # 2. サイトの中での見られ方
@@ -781,6 +839,10 @@ def build(root: Path, fetch: bool = True, api_base: str | None = None, now: date
             tmp = cache_path.with_suffix(".tmp")
             tmp.write_text(json.dumps(access, ensure_ascii=False), encoding="utf-8")
             os.replace(tmp, cache_path)
+            if access.get("failed"):  # 訪問者の数などは読めて、一部の一覧だけ読めなかった
+                notes.append("一部の一覧を読めませんでした: " + " / ".join(access["failed"]))
+                access_note = ("<b>一部の一覧を読めませんでした。</b>"
+                               + "<br>".join(esc(f) for f in access["failed"]) + "<br>ほかの数は読めています。")
         except GCError as exc:
             notes.append(str(exc))
             access_note = f"<b>アクセス数を読めませんでした。</b>{esc(exc)}"

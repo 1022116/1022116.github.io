@@ -217,15 +217,21 @@ class FakeGoatCounter:
     """GoatCounter の API の代わり（仕様 v18 のダッシュボードの試験用）。決まった数を返し、受けた問い合わせを記録する。
 
     status を 401 / 403 / 500 にするとそのエラーを返す。token が違えば 401。
+    detail_status={"toprefs": 404} のようにすると、その一覧だけエラーを返す。no_site=True ならコードの間違い（400）。
+    path_ids=False なら、hits の応答に path_id を付けない。
     """
 
     VIEWS = {"view/1": 21, "view/2": 9, "view/3": 14, "view/still": 2}
     SEEN = {"seen/10": 30, "seen/30": 18, "seen/60": 9, "seen/100": 4, "seen/all": 1}
 
-    def __init__(self, photo_ids, token: str = "fake-token-0123456789", status: int = 200):
+    def __init__(self, photo_ids, token: str = "fake-token-0123456789", status: int = 200,
+                 detail_status: dict | None = None, no_site: bool = False, path_ids: bool = True):
         self.photo_ids = list(photo_ids)
         self.token = token
         self.status = status
+        self.detail_status = dict(detail_status or {})
+        self.no_site = no_site
+        self.path_ids = path_ids
         self.requests = []
         self._srv = None
 
@@ -249,6 +255,8 @@ class FakeGoatCounter:
                 u = urlsplit(self.path)
                 q = {k: v[0] for k, v in parse_qs(u.query).items()}
                 fake.requests.append((u.path, q, self.headers.get("Authorization")))
+                if fake.no_site:  # 本物と同じ: 宛先のコードがないときは、キーを見る前に 400
+                    return self._send(400, {"error": 'no site at this domain ("nosuch.goatcounter.com")'})
                 if self.headers.get("Authorization") != f"Bearer {fake.token}":
                     return self._send(401, {"error": "unauthorized"})
                 if fake.status != 200:
@@ -256,7 +264,11 @@ class FakeGoatCounter:
                 if u.path == "/api/v0/stats/hits":
                     return self._send(200, fake.hits(q))
                 if u.path.startswith("/api/v0/stats/"):
-                    return self._send(200, fake.stats(u.path.rsplit("/", 1)[1]))
+                    page = u.path.rsplit("/", 1)[1]
+                    if page in fake.detail_status:
+                        code = fake.detail_status[page]
+                        return self._send(code, {"error": "not found" if code == 404 else "unexpected error code ‘x’"})
+                    return self._send(200, fake.stats(page))
                 return self._send(404, {"error": "not found"})
 
             def _send(self, code, obj):
@@ -306,6 +318,9 @@ class FakeGoatCounter:
             hits.append({"path": f"photo/{pid}", "path_id": 100 + i, "event": True, "count": (15 - i) * scale, "stats": []})
         hits.append({"path": "photo/0000deadbeef0000", "path_id": 99, "event": True, "count": 1, "stats": []})  # 今はない写真
         hits.sort(key=lambda h: -h["count"])
+        if not self.path_ids:
+            for h in hits:
+                h.pop("path_id", None)
         return {"hits": hits, "total": total, "more": False}
 
     def stats(self, page):
